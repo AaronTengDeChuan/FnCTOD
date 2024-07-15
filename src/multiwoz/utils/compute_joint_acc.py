@@ -12,6 +12,7 @@ from sklearn.metrics import f1_score, accuracy_score
 import sys
 import numpy as np
 import argparse
+from collections import defaultdict
 
 from src.multiwoz.utils.dst import (
     ignore_none,
@@ -78,8 +79,52 @@ def compute_prf(gold, pred):
     return F1, recall, precision, count
 
 
+def compute_overlap(gold, pred, accm_dict):
+    def get_slot(bs):
+        return bs.rsplit("->", maxsplit=1)[0]
+    gold_slots = set(get_slot(bs) for bs in gold)
+    pred_slots = set(get_slot(bs) for bs in pred)
+
+    accm_dict["match"] += int(gold_slots == pred_slots)
+    accm_dict["value_match"] += int(set(gold) == set(pred))
+    accm_dict["cover"] += int(gold_slots.issubset(pred_slots))
+    accm_dict["value_cover"] += int(set(gold).issubset(set(pred)))
+    accm_dict["tot"] += 1
+    accm_dict["valid_tot"] += int(len(gold) > 0)
+    tp, fp, fn = len(gold_slots & pred_slots), len(pred_slots - gold_slots), len(gold_slots - pred_slots)
+    accm_dict["tp"] += tp
+    accm_dict["fp"] += fp
+    accm_dict["fn"] += fn
+    precision = tp / (tp + fp) if tp != 0 else 0
+    recall = tp / (tp + fn) if tp != 0 else 0
+    accm_dict["macro_precision"] += precision
+    accm_dict["macro_recall"] += recall
+    accm_dict["macro_f1"] += 2 * precision * recall / (precision + recall) if (precision + recall) != 0 else 0
+    accm_dict["macro_value_recall"] += len(set(gold) & set(pred)) / len(set(gold)) if len(set(gold)) != 0 else 0
+
+
+def postprocess_overlap_accm(overlap_accm_dict):
+    # overlap
+    overlap_accm_dict["match_ratio"] = overlap_accm_dict["match"] / overlap_accm_dict["tot"]
+    overlap_accm_dict["value_match_ratio"] = overlap_accm_dict["value_match"] / overlap_accm_dict["tot"]
+    overlap_accm_dict["cover_ratio"] = overlap_accm_dict["cover"] / overlap_accm_dict["tot"]
+    overlap_accm_dict["value_cover_ratio"] = overlap_accm_dict["value_cover"] / overlap_accm_dict["tot"]
+    overlap_accm_dict["micro_precision"] = overlap_accm_dict["tp"] / (
+            overlap_accm_dict["tp"] + overlap_accm_dict["fp"]) if overlap_accm_dict["tp"] != 0 else 0
+    overlap_accm_dict["micro_recall"] = overlap_accm_dict["tp"] / (
+            overlap_accm_dict["tp"] + overlap_accm_dict["fn"]) if overlap_accm_dict["tp"] != 0 else 0
+    overlap_accm_dict["micro_f1"] = 2 * overlap_accm_dict["micro_precision"] * overlap_accm_dict["micro_recall"] / (
+            overlap_accm_dict["micro_precision"] + overlap_accm_dict["micro_recall"]) if (
+            (overlap_accm_dict["micro_precision"] + overlap_accm_dict["micro_recall"]) != 0) else 0
+    overlap_accm_dict["macro_precision"] /= overlap_accm_dict["tot"]
+    overlap_accm_dict["macro_recall"] /= overlap_accm_dict["tot"]
+    overlap_accm_dict["macro_f1"] /= overlap_accm_dict["tot"]
+    overlap_accm_dict["macro_value_recall"] /= overlap_accm_dict["valid_tot"]
+
+
 def compute_jacc(
     data,
+    gen_state_channel="bspn_gen",
     default_cleaning_flag=True,
     type2_cleaning_flag=False,
     ignore_dontcare_in_pred=False,
@@ -95,6 +140,12 @@ def compute_jacc(
         "[attraction]": [0, 0, 0, 0],  # accuracy, f1
         "[train]": [0, 0, 0, 0],  # accuracy, f1
     }
+    avg_domain_jga = {
+        "micro_jga": [0, 0, 0],
+        "macro_jga": [0, 0, 0],
+        "micro_f1": [0, 0, 0],
+        "macro_f1": [0, 0, 0],
+    }
     per_slot_acc = {
         "[restaurant]": {},
         "[taxi]": {},
@@ -102,6 +153,8 @@ def compute_jacc(
         "[attraction]": {},
         "[train]": {},
     }
+    overlap_accm_dict = defaultdict(lambda : 0)
+    per_domain_overlap = defaultdict(lambda : defaultdict(lambda : 0))
 
     error = {}
 
@@ -110,7 +163,7 @@ def compute_jacc(
         all_domains = list(data[file_name].values())[-1]["all_domains"]
         for turn_id, turn_data in data[file_name].items():
             turn_target = turn_data["bspn"]
-            turn_pred = turn_data["bspn_gen"]
+            turn_pred = turn_data[gen_state_channel]
             turn_target = paser_bs(turn_target)
             turn_pred = paser_bs(turn_pred)
             # clean
@@ -134,6 +187,7 @@ def compute_jacc(
             turn_pred, turn_target = ignore_none(turn_pred, turn_target)
             if ignore_dontcare_in_pred:
                 turn_pred = ignore_dontcare(turn_pred)
+                turn_target = ignore_dontcare(turn_target)
 
             # precision
             wrong_predbs = []
@@ -174,6 +228,13 @@ def compute_jacc(
                     )
                     per_domain_jga[domain][2] += temp_f1
                     per_domain_jga[domain][3] += count
+
+                    compute_overlap(
+                        per_domain_turn_target[domain],
+                        per_domain_turn_pred[domain],
+                        per_domain_overlap[domain]
+                    )
+
 
             # per slot accuracy
             per_domain_turn_target = paser_per_domain_bs(turn_target)
@@ -232,6 +293,9 @@ def compute_jacc(
                 turn_data["missed_targets"] = missed_targets
                 error[file_name][turn_id] = turn_data
 
+            # Overlap
+            compute_overlap(turn_target, turn_pred, overlap_accm_dict)
+
             num_turns += 1
 
     joint_acc /= num_turns
@@ -240,6 +304,12 @@ def compute_jacc(
     f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
     # per domain jga
     for domain in per_domain_jga:
+        # micro avg jga over all domains
+        avg_domain_jga["micro_jga"][0] += per_domain_jga[domain][0]
+        avg_domain_jga["micro_jga"][1] += per_domain_jga[domain][1]
+        avg_domain_jga["micro_f1"][0] += per_domain_jga[domain][2]
+        avg_domain_jga["micro_f1"][1] += per_domain_jga[domain][3]
+
         per_domain_jga[domain][0] = (
             (per_domain_jga[domain][0] / per_domain_jga[domain][1])
             if per_domain_jga[domain][1] > 0
@@ -250,6 +320,15 @@ def compute_jacc(
             if per_domain_jga[domain][3] > 0
             else 0
         )  # F1
+        # macro avg jga over all domains
+        avg_domain_jga["macro_jga"][0] += per_domain_jga[domain][0]
+        avg_domain_jga["macro_jga"][1] += 1
+        avg_domain_jga["macro_f1"][0] += per_domain_jga[domain][2]
+        avg_domain_jga["macro_f1"][1] += 1
+
+    # avg domain jga
+    for mn, mv in avg_domain_jga.items():
+        mv[2] = mv[0] / mv[1] if mv[1] > 0 else 0
 
     # per slot jga
     for domain in per_slot_acc:
@@ -259,5 +338,11 @@ def compute_jacc(
                 if per_slot_acc[domain][slot][1] > 0
                 else 0
             )
+
+    postprocess_overlap_accm(overlap_accm_dict)
+    for domain in per_domain_overlap:
+        postprocess_overlap_accm(per_domain_overlap[domain])
+
     # print('joint accuracy: {}, f1: {}, precision: {}, recall: {}'.format(joint_acc, f1, precision, recall))
-    return joint_acc, f1, precision, recall, per_domain_jga, per_slot_acc, error
+    return (joint_acc, f1, precision, recall, per_domain_jga, avg_domain_jga, per_slot_acc, error,
+            overlap_accm_dict, per_domain_overlap)

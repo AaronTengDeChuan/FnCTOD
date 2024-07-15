@@ -176,6 +176,7 @@ class OpenAI:
         **kwargs,
     ) -> list[str]:
         openai.api_key = os.environ.get("OPENAI_API_KEY", None)
+        openai.base_url = os.environ.get("OPENAI_BASE_URL", None)
 
         # stop words
         if isinstance(stop, List):
@@ -198,7 +199,8 @@ class OpenAI:
                     "frequency_penalty": frequency_penalty,
                     "presence_penalty": presence_penalty,
                     "stop": stop,
-                    "request_timeout": self.timeout,  # timeout!
+                    # "request_timeout": self.timeout,  # timeout!
+                    "timeout": self.timeout
                 }
                 if functions:
                     params["functions"] = functions
@@ -206,7 +208,8 @@ class OpenAI:
                     params["function_call"] = function_call
 
                 # call the function
-                response = openai.ChatCompletion.create(**params)
+                # response = openai.ChatCompletion.create(**params)
+                response = openai.chat.completions.create(**params).to_dict()
                 candidates = response["choices"]
                 candidates = [candidate["message"] for candidate in candidates]
                 return candidates
@@ -215,6 +218,7 @@ class OpenAI:
             except Exception as e:
                 # logging.warning("OpenAI rate limit error. Retry")
                 logging.warning(e)
+                logging.warning(json.dumps(params, indent=2))
                 # Exponential backoff
                 time.sleep(
                     max(

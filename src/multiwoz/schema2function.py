@@ -90,7 +90,7 @@ def schema2function(service, template="llama2", rename_mapping={}):
     ]
     if contain_name_parameter:
         CAUTIONS.append(
-            "Always record the exact value of the 'name' parameter when mentioned. Avoid using pronouns or coreferences like 'the hotel' or 'the restaurant.'"
+            "Always record the exact value of the 'name' parameter when mentioned. Avoid using pronouns or coreferences like 'the hotel' or 'the restaurant'."
         )
     description += " ".join(CAUTIONS)
     function["description"] = description

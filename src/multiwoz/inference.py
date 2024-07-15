@@ -9,10 +9,13 @@
 
 import os
 import json
+import time
 import random
 import argparse
 import copy
 import logging
+from tqdm import tqdm
+from functools import partial
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -35,6 +38,7 @@ from src.utils import *
 from chatbots.utils import *
 from chatbots.llm import *
 from src.multiwoz.schema2function import schema2function
+from src.multiwoz.independent_inference import generate_dst
 
 EXPERIMENT_DOMAINS = ["[taxi]", "[train]", "[attraction]", "[hotel]", "[restaurant]"]
 domain2function_mapping = {
@@ -47,13 +51,82 @@ domain2function_mapping = {
     "police": "police",
 }
 
+domain2user_inform_mapping = {
+    "hotel": "track_hotel_inform_by_user",
+
+}
+
+
+def parse_dst_response(assistant_message, domain2mapping, schema, user_goal):
+    turn_domain = None
+    current_function = None
+    turn_bs_dict = {}
+    if "function_call" in assistant_message:
+        function_call = assistant_message["function_call"]
+        try:
+            # step 1: get the domain
+            if "name" in function_call:
+                pred_function = function_call["name"].strip()
+            elif "function" in function_call:
+                pred_function = function_call["function"].strip()
+
+            for d, f in domain2mapping.items():
+                if pred_function == f:
+                    turn_domain = "[" + d + "]"
+                    break
+            assert turn_domain is not None
+
+            # step 2: get the current function
+            for service in schema:
+                if service["service_name"] == turn_domain[1:-1]:
+                    current_function = schema2function(
+                        service,
+                        template=ChatCompletion.template,
+                        rename_mapping=domain2function_mapping,
+                    )
+            assert current_function is not None
+
+            # step 3: get the arguments
+            turn_bs_dict_gen = function_call["arguments"]
+            if isinstance(turn_bs_dict_gen, str):
+                turn_bs_dict_gen = json.loads(turn_bs_dict_gen)
+            assert isinstance(turn_bs_dict_gen, dict)
+        except:
+            print("Can not parse:", function_call)
+            turn_bs_dict_gen = {}
+
+        # update user goal
+        if turn_domain in EXPERIMENT_DOMAINS:
+            if turn_domain not in user_goal:
+                user_goal[turn_domain] = {}
+            if turn_domain not in turn_bs_dict:
+                turn_bs_dict[turn_domain] = {}
+
+            # clean the generation and update user goal
+            for slot, value in turn_bs_dict_gen.items():
+                slot = slot.strip().lower()
+                value = str(value).strip().lower()
+                # only update the valid generations
+                if slot in current_function["parameters"]["properties"]:
+                    if "enum" not in current_function["parameters"]["properties"][slot]:
+                        user_goal[turn_domain][slot] = value
+                        turn_bs_dict[turn_domain][slot] = value
+                    elif value in current_function["parameters"]["properties"][slot]["enum"]:
+                        user_goal[turn_domain][slot] = value
+                        turn_bs_dict[turn_domain][slot] = value
+
+    return turn_domain, turn_bs_dict
+
 
 def prepare_evaluation(data):
     eval_data = {}
+    in_out_data = {}
     for dial_id, turns in data.items():
         eval_turns = []
+        in_out_turns = []
         for turn in turns:
             eval_turn = copy.deepcopy(turn)
+
             for key in [
                 "dial_id",
                 "turn_num",
@@ -87,8 +160,24 @@ def prepare_evaluation(data):
                 else:
                     eval_turn[key] = ""
             eval_turns.append(eval_turn)
+
+            in_out_turn = {}
+            for key in [
+                "dial_id",
+                "turn_num",
+                "user",
+                "resp",
+                "nodelx_resp",
+                "dspn",
+                "bspn_dict",
+                "turn_bspn_dict",
+                "all_domains",
+            ]:
+                in_out_turn[key] = turn[key]
+            in_out_turns.append(in_out_turn)
         eval_data[dial_id] = eval_turns
-    return eval_data
+        in_out_data[dial_id] = in_out_turns
+    return eval_data, in_out_data
 
 
 if __name__ == "__main__":
@@ -107,6 +196,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--n_eval", type=int, default=100, help="number of evaluated dialogues"
     )  #
+
+    parser.add_argument("--ind_dst", type=str2bool, default=False,
+                        help="whether to decode belief state slot by slot")
+    parser.add_argument("--divide_inform_confirm", type=str2bool, default=False,
+                        help="whether to divide inform values and confirm values when tracking belief states")
+    parser.add_argument("--gen_state_channel", type=str, default="bspn_gen",
+                        choices=["bspn_gen", "inform_bspn_gen", "confirm_bspn_gen"])
+    parser.add_argument("--track_slot_status", type=str2bool, default=False,
+                        help="whether to track slot status")
+    parser.add_argument("--dst_result_path", type=str, default=None,
+                        help="path to the dst result file, which is combined with slot status to generate the final result")
 
     # parser.add_argument('--delx', type=str2bool, default=False, help='whether to use multiple functions') #
     parser.add_argument(
@@ -217,28 +317,66 @@ if __name__ == "__main__":
         return_list=False,
     )
     schema = load_schema(args.dataset_version)
+    # get domain descriptions
+    domain2desc = {}
+    for service in schema:
+        dn = service["service_name"]
+        if f"[{dn}]" in EXPERIMENT_DOMAINS:
+            domain2desc[dn] = service["description"] + "."
+
     examples = load_examples(args.dataset_version, train_data)
+    div_examples = json.load(open(f"./src/multiwoz/divide_examples.json", "r"))
 
     if args.split == "val":
         eval_data = val_data
     elif args.split == "test":
         eval_data = test_data
-    eval_data = prepare_evaluation(eval_data)
+    eval_data, eval_in_out = prepare_evaluation(eval_data)
+
 
     # save data path
     data_prefix = f"./outputs/multiwoz{args.dataset_version}"
     if not os.path.exists(data_prefix):
         os.makedirs(data_prefix, exist_ok=True)
 
+    if args.ind_dst:
+        config_prefix = f"{data_prefix}/{args.split}{args.n_eval}-multi{args.multi_domain}-ref{args.ref_domain}-prev{args.add_prev}-{args.function_type}-ind_dst{args.dst_nshot}shot"
+    elif args.divide_inform_confirm:
+        config_prefix = f"{data_prefix}/{args.split}{args.n_eval}-multi{args.multi_domain}-ref{args.ref_domain}-prev{args.add_prev}-{args.function_type}-div_dst{args.dst_nshot}shot"
+    elif args.track_slot_status:
+        config_prefix = f"{data_prefix}/{args.split}{args.n_eval}-multi{args.multi_domain}-ref{args.ref_domain}-prev{args.add_prev}-{args.function_type}-status_dst{args.dst_nshot}shot"
+    else:
+        config_prefix = f"{data_prefix}/{args.split}{args.n_eval}-multi{args.multi_domain}-ref{args.ref_domain}-prev{args.add_prev}-{args.function_type}-dst{args.dst_nshot}shot"
+
     # save dst result path
-    dst_eval_result_path = f"{data_prefix}/{args.split}{args.n_eval}-multi{args.multi_domain}-ref{args.ref_domain}-prev{args.add_prev}-{args.function_type}-dst{args.dst_nshot}shot-{args.model}.json"
-    dst_eval_error_path = f"{data_prefix}/{args.split}{args.n_eval}-multi{args.multi_domain}-ref{args.ref_domain}-prev{args.add_prev}-{args.function_type}-dst{args.dst_nshot}shot-{args.model}-errors.json"
+    dst_eval_result_path = f"{config_prefix}-{args.model}.json"
+    dst_eval_messages_path = f"{config_prefix}-nlg{args.nlg_nshot}shot-{args.model}-messages.json"
+
+    # save error path and metrics path
+    if not args.divide_inform_confirm or args.gen_state_channel == "bspn_gen":
+        dst_eval_error_path = f"{config_prefix}-{args.model}-errors.json"
+        eval_metrics_path = f"{config_prefix}-nlg{args.nlg_nshot}shot-{args.model}-metrics.json"
+    else:
+        dst_eval_error_path = f"{config_prefix}-{args.model}-{args.gen_state_channel}-errors.json"
+        eval_metrics_path = f"{config_prefix}-nlg{args.nlg_nshot}shot-{args.model}-{args.gen_state_channel}-metrics.json"
 
     # save nlg result path
     if args.task == "e2e":
-        nlg_eval_result_path = f"{data_prefix}/{args.split}{args.n_eval}-multi{args.multi_domain}-ref{args.ref_domain}-prev{args.add_prev}-{args.function_type}-dst{args.dst_nshot}shot-nlg{args.nlg_nshot}shot-{args.model}.json"
+        nlg_eval_result_path = f"{config_prefix}-nlg{args.nlg_nshot}shot-{args.model}.json"
     elif args.task == "nlg":
         nlg_eval_result_path = f"{data_prefix}/{args.split}{args.n_eval}-multi{args.multi_domain}-prev{args.add_prev}-{args.function_type}-nlg{args.nlg_nshot}shot-{args.model}.json"
+        eval_metrics_path = f"{data_prefix}/{args.split}{args.n_eval}-multi{args.multi_domain}-prev{args.add_prev}-{args.function_type}-nlg{args.nlg_nshot}shot-{args.model}-metrics.json"
+
+
+    eval_messages_path = dst_eval_messages_path
+    print(f"File '{dst_eval_messages_path}' exists: {os.path.exists(dst_eval_messages_path)}")
+    if os.path.exists(eval_messages_path):
+        with open(eval_messages_path, "r") as file:
+            evaluated_in_out = json.load(file)
+    else:
+        evaluated_in_out = {}
+
+    print(f"File '{dst_eval_result_path}' exists: {os.path.exists(dst_eval_result_path)}")
 
     # load existing data
     if args.task == "dst":
@@ -272,6 +410,10 @@ if __name__ == "__main__":
     # add the data that has been evaluated
     for dial_id, dp in evaluated_data.items():
         eval_data[dial_id] = dp
+    for dial_id, dp in evaluated_in_out.items():
+        for idx, turn in enumerate(dp):
+            assert eval_in_out[dial_id][idx]["turn_num"] == turn["turn_num"]
+            eval_in_out[dial_id][idx].update(turn)
 
     # evaluation
     if args.generate:
@@ -284,10 +426,19 @@ if __name__ == "__main__":
             verbose=args.verbose,
         )
 
-        for dial_id, eval_turns in eval_data.items():
+        save_interval = 1 if args.ind_dst else 10
+
+        d_pbar = tqdm(total=len(eval_data), desc=f"Evaluation {args.split}")
+        num_turns = sum([len(turns) for turns in eval_data.values()])
+        num_completed_turns = 0
+
+        for didx, (dial_id, eval_turns) in enumerate(eval_data.items()):
             user_goal = {}
+            inform_user_goal = {}
+            confirm_user_goal = {}
 
             for idx, eval_turn in enumerate(eval_turns):
+                turn_st = time.time()
                 """Step 1: Domain prediction"""
                 if args.multi_domain:
                     turn_domain = None
@@ -387,7 +538,7 @@ if __name__ == "__main__":
                     messages.append({"role": "assistant", "content": resp_prefix})
 
                     # predict domain
-                    chat_response = ChatCompletion.complete(
+                    chat_response, in_out = ChatCompletion.complete(
                         messages=messages,
                         examples=example_messages,
                         required=["content"],
@@ -431,6 +582,13 @@ if __name__ == "__main__":
                             turn_domain = "[attraction]"
                             eval_turn["dspn_gen"] = turn_domain
                             break
+
+                    eval_in_out[dial_id][idx]["domain"] = {
+                        "prompt": in_out["prompt"],
+                        "output": in_out["output"],
+                        "dspn": eval_turn["dspn"],
+                        "dspn_gen": turn_domain
+                    }
 
                     if not turn_domain:
                         print("Can not parse:", dspn_gen)
@@ -481,8 +639,13 @@ if __name__ == "__main__":
                     messages.append({"role": "system", "content": system_message})
 
                     # select examples for the current domain
-                    if not args.multi_domain and turn_domain in examples:
-                        domain_examples = examples[turn_domain][: args.dst_nshot]
+                    if args.divide_inform_confirm:
+                        dst_examples = div_examples
+                    else:
+                        # dst_examples = examples
+                        dst_examples = div_examples
+                    if not args.multi_domain and turn_domain in dst_examples:
+                        domain_examples = dst_examples[turn_domain][: args.dst_nshot]
                     else:
                         domain_examples = []
 
@@ -566,99 +729,237 @@ if __name__ == "__main__":
                     messages.append({"role": "user", "content": usr})
 
                     # generate dst
-                    chat_response = ChatCompletion.complete(
-                        messages=messages,
-                        functions=functions,
-                        function_call={"name": current_function["name"]}
-                        if current_function
-                        else {},
-                        required=["function_call"],
-                        examples=example_messages,
-                        temperature=args.temperature,
-                        top_p=args.top_p,
-                        max_tokens=128,
-                        n_seqs=1,
-                    )
-                    assistant_message = chat_response[0]
-                    if "function_call" in assistant_message:
-                        function_call = assistant_message["function_call"]
-                        try:
-                            # step 1: get the domain
-                            if "name" in function_call:
-                                pred_function = function_call["name"].strip()
-                            elif "function" in function_call:
-                                pred_function = function_call["function"].strip()
+                    if args.ind_dst:
+                        completion_func = partial(
+                            ChatCompletion.complete,
+                            temperature=args.temperature,
+                            top_p=args.top_p,
+                            max_tokens=10,
+                            n_seqs=1,
+                        )
+                        state, in_out = generate_dst(
+                            eval_turn,
+                            messages,
+                            schema,
+                            EXPERIMENT_DOMAINS if args.multi_domain else [turn_domain],
+                            completion_func,
+                        )
+                        if args.multi_domain:
+                            user_goal = state
+                        else:
+                            user_goal.update(state)
+                    elif args.track_slot_status:
+                        status_messages, status_functions, domain2mapping = adapt_track_slot_status(
+                            messages, functions, domain2function_mapping, domain2desc)
+                        chat_response, in_out = ChatCompletion.complete(
+                            messages=status_messages,
+                            functions=status_functions,
+                            function_call={"name": status_functions[0]["name"]}
+                            if current_function
+                            else {},
+                            required=["function_call"],
+                            examples=example_messages,
+                            temperature=args.temperature,
+                            top_p=args.top_p,
+                            # temperature=0,
+                            # top_p=0,
+                            max_tokens=128,
+                            n_seqs=1,
+                        )
+                        turn_status_dict_gen = parse_status_response(
+                            chat_response[0], domain2mapping, status_functions, user_goal, EXPERIMENT_DOMAINS
+                        )
+                        in_out["turn_status_dict_gen"] = turn_status_dict_gen
+                    else:
+                        if args.divide_inform_confirm:
+                            in_out = []
+                            # first track slot values informed by user
+                            inform_sys_msg, inform_functions, domain2mapping = adapt_inform_or_confirm(
+                                "inform", functions, domain2function_mapping)
+                            messages[0]["content"] = inform_sys_msg
+                            example_messages = build_divide_examples(
+                                "inform", domain_examples, domain2mapping, EXPERIMENT_DOMAINS)
+                            chat_response, in_out_ = ChatCompletion.complete(
+                                messages=messages,
+                                functions=inform_functions,
+                                function_call={"name": inform_functions[0]["name"]}
+                                if current_function
+                                else {},
+                                required=["function_call"],
+                                examples=example_messages,
+                                temperature=args.temperature,
+                                top_p=args.top_p,
+                                max_tokens=128,
+                                n_seqs=1,
+                            )
+                            td, turn_inform_bs_dict_gen = parse_dst_response(
+                                chat_response[0], domain2mapping, schema, user_goal
+                            )
+                            in_out_["turn_inform_bs_dict_gen"] = turn_inform_bs_dict_gen
+                            in_out.append(in_out_)
+                            if td:
+                                if turn_domain:
+                                    assert turn_domain == td
+                                turn_domain = td
 
-                            for d, f in domain2function_mapping.items():
-                                if pred_function == f:
-                                    turn_domain = "[" + d + "]"
-                                    break
-                            assert turn_domain is not None
+                            # then track slot values confirmed by user
+                            confirm_sys_msg, confirm_functions, domain2mapping = adapt_inform_or_confirm(
+                                "confirm", functions, domain2function_mapping)
+                            example_messages = build_divide_examples(
+                                "confirm", domain_examples, domain2mapping, EXPERIMENT_DOMAINS)
+                            messages[0]["content"] = confirm_sys_msg
+                            chat_response, in_out_ = ChatCompletion.complete(
+                                messages=messages,
+                                functions=confirm_functions,
+                                function_call={"name": confirm_functions[0]["name"]}
+                                if current_function
+                                else {},
+                                required=["function_call"],
+                                examples=example_messages,
+                                temperature=args.temperature,
+                                top_p=args.top_p,
+                                max_tokens=128,
+                                n_seqs=1,
+                            )
+                            td, turn_confirm_bs_dict_gen = parse_dst_response(
+                                chat_response[0], domain2mapping, schema, user_goal
+                            )
+                            in_out_["turn_confirm_bs_dict_gen"] = turn_confirm_bs_dict_gen
+                            in_out.append(in_out_)
+                            if td:
+                                if turn_domain:
+                                    assert turn_domain == td
+                                turn_domain = td
+                        else:
+                            example_messages = build_divide_examples(
+                                None, domain_examples, domain2function_mapping, EXPERIMENT_DOMAINS)
+                            chat_response, in_out = ChatCompletion.complete(
+                                messages=messages,
+                                functions=functions,
+                                function_call={"name": current_function["name"]}
+                                if current_function
+                                else {},
+                                required=["function_call"],
+                                examples=example_messages,
+                                temperature=args.temperature,
+                                top_p=args.top_p,
+                                max_tokens=128,
+                                n_seqs=1,
+                            )
+                            assistant_message = chat_response[0]
+                            td, turn_bs_dict_gen = parse_dst_response(
+                                assistant_message, domain2function_mapping, schema, user_goal
+                            )
+                            if td:
+                                if turn_domain:
+                                    assert turn_domain == td
+                                turn_domain = td
+                            '''
+                            if "function_call" in assistant_message:
+                                function_call = assistant_message["function_call"]
+                                try:
+                                    # step 1: get the domain
+                                    if "name" in function_call:
+                                        pred_function = function_call["name"].strip()
+                                    elif "function" in function_call:
+                                        pred_function = function_call["function"].strip()
 
-                            # step 2: get the current function
-                            for service in schema:
-                                if service["service_name"] == turn_domain[1:-1]:
-                                    current_function = schema2function(
-                                        service,
-                                        template=ChatCompletion.template,
-                                        rename_mapping=domain2function_mapping,
-                                    )
-                            assert current_function is not None
+                                    for d, f in domain2function_mapping.items():
+                                        if pred_function == f:
+                                            turn_domain = "[" + d + "]"
+                                            break
+                                    assert turn_domain is not None
 
-                            # step 3: get the arguments
-                            turn_bs_dict_gen = function_call["arguments"]
-                            if isinstance(turn_bs_dict_gen, str):
-                                turn_bs_dict_gen = json.loads(turn_bs_dict_gen)
-                            assert isinstance(turn_bs_dict_gen, dict)
-                        except:
-                            print("Can not parse:", function_call)
-                            turn_bs_dict_gen = {}
+                                    # step 2: get the current function
+                                    for service in schema:
+                                        if service["service_name"] == turn_domain[1:-1]:
+                                            current_function = schema2function(
+                                                service,
+                                                template=ChatCompletion.template,
+                                                rename_mapping=domain2function_mapping,
+                                            )
+                                    assert current_function is not None
 
-                        # update user goal
-                        if turn_domain in EXPERIMENT_DOMAINS:
-                            if turn_domain not in user_goal:
-                                user_goal[turn_domain] = {}
+                                    # step 3: get the arguments
+                                    turn_bs_dict_gen = function_call["arguments"]
+                                    if isinstance(turn_bs_dict_gen, str):
+                                        turn_bs_dict_gen = json.loads(turn_bs_dict_gen)
+                                    assert isinstance(turn_bs_dict_gen, dict)
+                                except:
+                                    print("Can not parse:", function_call)
+                                    turn_bs_dict_gen = {}
 
-                            # clean the generation and update user goal
-                            for slot, value in turn_bs_dict_gen.items():
-                                slot = slot.strip().lower()
-                                value = str(value).strip().lower()
-                                # only update the valid generations
-                                if slot in current_function["parameters"]["properties"]:
-                                    if (
-                                        "enum"
-                                        not in current_function["parameters"][
-                                            "properties"
-                                        ][slot]
-                                    ):
-                                        user_goal[turn_domain][slot] = value
-                                    elif (
-                                        value
-                                        in current_function["parameters"]["properties"][
-                                            slot
-                                        ]["enum"]
-                                    ):
-                                        user_goal[turn_domain][slot] = value
+                                # update user goal
+                                if turn_domain in EXPERIMENT_DOMAINS:
+                                    if turn_domain not in user_goal:
+                                        user_goal[turn_domain] = {}
+
+                                    # clean the generation and update user goal
+                                    for slot, value in turn_bs_dict_gen.items():
+                                        slot = slot.strip().lower()
+                                        value = str(value).strip().lower()
+                                        # only update the valid generations
+                                        if slot in current_function["parameters"]["properties"]:
+                                            if (
+                                                "enum"
+                                                not in current_function["parameters"][
+                                                    "properties"
+                                                ][slot]
+                                            ):
+                                                user_goal[turn_domain][slot] = value
+                                            elif (
+                                                value
+                                                in current_function["parameters"]["properties"][
+                                                    slot
+                                                ]["enum"]
+                                            ):
+                                                user_goal[turn_domain][slot] = value
+                            '''
 
                     # record
-                    print(user_goal)
+                    # print(user_goal)
                     bspn_gen = paser_dict_to_bs(user_goal)
                     eval_turn["bspn_gen"] = bspn_gen  # for evaluation
-                    eval_turn["bspn_dict_gen"] = user_goal
+                    eval_turn["bspn_dict_gen"] = copy.deepcopy(user_goal)
 
-                    with open(eval_result_path, "w") as file:
-                        json.dump(eval_data, file, indent=4)
+                    if args.ind_dst or args.divide_inform_confirm or args.track_slot_status:
+                        eval_in_out[dial_id][idx]["dst"] = in_out
+                        eval_in_out[dial_id][idx]["bspn_dict"] = eval_in_out[dial_id][idx].pop("bspn_dict")
+                        eval_in_out[dial_id][idx]["bspn_dict_gen"] = eval_turn["bspn_dict_gen"]
+                    else:
+                        eval_in_out[dial_id][idx]["dst"] = {
+                            "prompt": in_out["prompt"],
+                            "output": in_out["output"],
+                            "bspn_dict": eval_turn["bspn_dict"],
+                            "bspn_dict_gen": eval_turn["bspn_dict_gen"]
+                        }
+
+                    if save_interval <= 0:
+                        with open(eval_result_path, "w") as file:
+                            json.dump(eval_data, file, indent=4)
+                        with open(eval_messages_path, "w") as file:
+                            json.dump(eval_in_out, file, indent=4)
 
                     # debug
                     if args.verbose:
-                        print("=" * 25 + f" {dial_id}-{idx} " + "=" * 25)
+                        duration = time.time() - turn_st
+                        print("=" * 25 + f" {dial_id}-{idx} (consume {duration:.2f} secs)" + "=" * 25)
                         print(f"User: {eval_turn['user']}")
+                        print(f"Oracle domain:", eval_turn["dspn"])
                         print(f"Detect domain:", turn_domain)
                         print(f"Oracle bspn: {eval_turn['bspn']}")
                         print(f"Generated bspn: {bspn_gen}")
 
                     if args.debug:
                         _ = input()
+
+                if args.divide_inform_confirm:
+                    turn_inform_bs_dict_gen = eval_in_out[dial_id][idx]["dst"][0]["turn_inform_bs_dict_gen"]
+                    dict_update(inform_user_goal, copy.deepcopy(turn_inform_bs_dict_gen))
+                    eval_turn["inform_bspn_gen"] = paser_dict_to_bs(inform_user_goal)
+                    turn_confirm_bs_dict_gen = eval_in_out[dial_id][idx]["dst"][1]["turn_confirm_bs_dict_gen"]
+                    dict_update(confirm_user_goal, copy.deepcopy(turn_confirm_bs_dict_gen))
+                    eval_turn["confirm_bspn_gen"] = paser_dict_to_bs(confirm_user_goal)
 
                 """
                 Step 3: Response generation (NLG) (DELX)
@@ -788,9 +1089,10 @@ if __name__ == "__main__":
                     messages.append(assistant_message)
 
                     # generate response
-                    chat_response = ChatCompletion.complete(
+                    chat_response, in_out = ChatCompletion.complete(
                         messages=messages,
                         functions=functions,
+                        function_call="none" if len(functions) else {},
                         examples=example_messages,
                         required=["content"],
                         temperature=args.temperature,
@@ -804,12 +1106,24 @@ if __name__ == "__main__":
                     # record
                     resp_gen = assistant_response
                     eval_turn["resp_gen"] = assistant_response  # for evaluation
-                    with open(eval_result_path, "w") as file:
-                        json.dump(eval_data, file, indent=4)
+
+                    eval_in_out[dial_id][idx]["nlg"] = {
+                        "prompt": in_out["prompt"],
+                        "output": in_out["output"],
+                        "resp": eval_turn["resp"],
+                        "resp_gen": eval_turn["resp_gen"]
+                    }
+
+                    if save_interval <= 0:
+                        with open(eval_result_path, "w") as file:
+                            json.dump(eval_data, file, indent=4)
+                        with open(eval_messages_path, "w") as file:
+                            json.dump(eval_in_out, file, indent=4)
 
                     # debug
                     if args.verbose:
-                        print("=" * 25 + f" {dial_id}-{idx} " + "=" * 25)
+                        duration = time.time() - turn_st
+                        print("=" * 25 + f" {dial_id}-{idx} (consume {duration:.2f} secs)" + "=" * 25)
                         print(f"User: {eval_turn['user']}")
                         print(f"Detect domain:", turn_domain)
                         print(f"Oracle bspn: {eval_turn['bspn']}")
@@ -820,9 +1134,89 @@ if __name__ == "__main__":
                     if args.debug:
                         _ = input()
 
+                if not args.verbose:
+                    num_completed_turns += 1
+                    d_pbar.set_postfix(
+                        c_turns=num_completed_turns, n_turns=num_turns
+                    )
+
+            if save_interval > 0 and (didx % save_interval == 0 or didx == len(eval_data) - 1):
+                with open(eval_result_path, "w") as file:
+                    json.dump(eval_data, file, indent=4)
+                with open(eval_messages_path, "w") as file:
+                    json.dump(eval_in_out, file, indent=4)
+
+            if not args.verbose:
+                d_pbar.update(1)
+    else:
+        # load the model
+        ChatCompletion = chat_completion(
+            model=args.model,
+            function_type=args.function_type,
+            function_call_prefix=fc_prefix,
+            function_call_suffix=fc_suffix,
+            verbose=args.verbose,
+        )
+        dst_results = None
+        if args.dst_result_path and os.path.isfile(args.dst_result_path):
+            print(f"Use the '{args.gen_state_channel}' channel of dst results from '{args.dst_result_path}'.")
+            with open(args.dst_result_path, "r") as file:
+                dst_results = json.load(file)
+
+        num_invalid_dst = 0
+        d_pbar = tqdm(total=len(eval_data), desc=f"Evaluation {args.split}")
+        for didx, (dial_id, eval_turns) in enumerate(eval_data.items()):
+            user_goal = {}
+
+            for idx, eval_turn in enumerate(eval_turns):
+                turn_domain = eval_turn["dspn_gen"]
+                # Find the domain schema, examples for the prompt construction
+                functions = []
+                current_function = None
+                for domain in EXPERIMENT_DOMAINS:
+                    for service in schema:
+                        if service["service_name"] == domain[1:-1]:
+                            function = schema2function(
+                                service,
+                                template=ChatCompletion.template,
+                                rename_mapping=domain2function_mapping,
+                            )
+                            if args.multi_domain:
+                                functions.append(function)
+                            elif domain == turn_domain:  # only the current turn domain
+                                current_function = function
+                                functions.append(current_function)
+                            break
+
+                bspn_dict_gen = user_goal
+                if args.track_slot_status:
+                    status_messages, status_functions, domain2mapping = adapt_track_slot_status(
+                        [], functions, domain2function_mapping, domain2desc)
+                    if "dst" in eval_in_out[dial_id][idx]:
+                        chat_response = eval_in_out[dial_id][idx]["dst"]["output"]
+                        turn_status_dict_gen = parse_status_response(
+                            chat_response[0], domain2mapping, status_functions, user_goal, EXPERIMENT_DOMAINS
+                        )
+                    else:
+                        num_invalid_dst += 1
+
+                    if dst_results:
+                        external_bs = dst_results[dial_id][idx][args.gen_state_channel]
+                        external_bs_dict = paser_bs_to_dict(external_bs)
+                        bspn_dict_gen = filter_state_based_on_status(external_bs_dict, user_goal)
+                else:
+                    bspn_dict_gen = eval_turn["bspn_dict_gen"]
+
+                bspn_gen = paser_dict_to_bs(bspn_dict_gen)
+                eval_turn[args.gen_state_channel] = bspn_gen  # for evaluation
+                eval_turn[args.gen_state_channel.replace("bspn_gen", "bspn_dict_gen")] = copy.deepcopy(bspn_dict_gen)
+        print(f"Number of invalid DST results: {num_invalid_dst}")
+
+
     """ Evaluations """
     print(args)
     eval_turns = unzip_session_data(eval_data)
+    all_metrics = {}
 
     """
     Domain Prediction evaluation
@@ -847,6 +1241,11 @@ if __name__ == "__main__":
         total += 1
     dp_acc = correct / total if total > 0 else 0
     print("Test Domain Prediction Accuracy is {}. ".format(dp_acc))
+    all_metrics["Domain"] = {
+        "accuracy": dp_acc,
+        "correct_turns": correct,
+        "total_turns": total,
+    }
 
     """
     DST evaluation
@@ -873,9 +1272,16 @@ if __name__ == "__main__":
         dev_precision,
         dev_recall,
         per_domain_jga,
+        avg_domain_jga,
         per_slot_acc,
         dev_error,
-    ) = compute_jacc(data=all_dev_result, ignore_dontcare_in_pred=True)
+        overlap_dict,
+        per_domain_overlap
+    ) = compute_jacc(
+        data=all_dev_result,
+        gen_state_channel=args.gen_state_channel if args.divide_inform_confirm or args.track_slot_status else "bspn_gen",
+        ignore_dontcare_in_pred=True
+    )
     dev_score *= 100
     print(
         "Test Joint Accuracy is {}. Slot F1 is {}, Precision is {}, Recall is {}".format(
@@ -885,6 +1291,12 @@ if __name__ == "__main__":
     print(
         "Number of total turns is {}, Number of valid turns is {}".format(total, valid)
     )
+
+    print(f"\nTurn-level Activate Slot Overlap Analysis: {json.dumps(overlap_dict, indent=2)}")
+    print(f"\nPer Domain Overlap Analysis:")
+    for domain, overlap in per_domain_overlap.items():
+        simplied_overlap = {k: overlap[k] for k in ["match_ratio", "value_match_ratio", "cover_ratio", "value_cover_ratio"]}
+        print(f"{domain}: {json.dumps(simplied_overlap)}")
 
     print("\nPer Domain Accuracy:")
     for domain in per_domain_jga:
@@ -896,6 +1308,8 @@ if __name__ == "__main__":
                 per_domain_jga[domain][1],
             )
         )
+    print("\nAverage Domain Accuracy:")
+    print(json.dumps(avg_domain_jga, indent=2))
 
     print("\nPer Slot Accuracy:")
     for domain in per_slot_acc:
@@ -908,8 +1322,22 @@ if __name__ == "__main__":
                     per_slot_acc[domain][slot][1],
                 )
             )
-    # with open(dst_eval_error_path, "w") as file:
-    #     json.dump(dev_error, file, indent=4)
+    with open(dst_eval_error_path, "w") as file:
+        json.dump(dev_error, file, indent=4)
+    all_metrics["DST"] = {
+        "gen_state_channel": args.gen_state_channel,
+        "total_turns": total,
+        "non_empty_turns": valid,
+        "joint_acc": dev_score,
+        "slot_precision": dev_precision,
+        "slot_recall": dev_recall,
+        "slot_f1": dev_f1,
+        "per_domain_jga": per_domain_jga,
+        "avg_domain_jga": avg_domain_jga,
+        "per_slot_acc": per_slot_acc,
+        "turn_level_active_slot_overlap": overlap_dict,
+        "per_domain_overlap": per_domain_overlap
+    }
 
     """
     NLG evaluation, inform, success, combined score
@@ -949,3 +1377,16 @@ if __name__ == "__main__":
     print(
         "Number of total turns is {}, Number of valid turns is {}".format(total, valid)
     )
+    all_metrics["NLG"] = {
+        "total_turns": total,
+        "non_empty_turns": valid,
+        "bleu": dev_bleu,
+        "inform": dev_match,
+        "success": dev_success,
+        "combined": dev_score,
+        "total_successes": total_successes,
+        "total_matches": total_matches,
+    }
+
+    with open(eval_metrics_path, "w") as file:
+        json.dump(all_metrics, file, indent=4)

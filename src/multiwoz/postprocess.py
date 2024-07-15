@@ -14,9 +14,9 @@ import json
 import random
 import copy
 import yaml
-from tqdm import trange
-from tqdm import tqdm
+from tqdm import trange, tqdm
 import argparse
+from itertools import chain
 
 from src.multiwoz.utils import *
 from src.multiwoz.utils.config import *
@@ -273,7 +273,8 @@ def process_data(data, reader):
             processed_turn["db"] = db
 
             # all domains till this turn
-            domains = set([t["dspn"] for t in turns[:turn_id]] + [turn["dspn"]])
+            # domains = set([t["dspn"] for t in turns[:turn_id]] + [turn["dspn"]])
+            domains = set(chain(*[t["dspn"].split() for t in turns[: turn_id + 1]]))
             processed_turn["all_domains"] = list(domains)
 
             # if this is the end of a dialog
@@ -497,7 +498,8 @@ def retrieve_demo(dialogs, domains, n=5, max_turns=6, bs_da_ratios=[0.6, 0.4]):
                         if da not in covered_da_list:
                             covered_da.append(da)
 
-                    bs_dict = paser_aspn_to_dict(turn["bspn"])
+                    # bs_dict = paser_aspn_to_dict(turn["bspn"])
+                    bs_dict = paser_bs_to_dict(turn["bspn"])
                     bs_list = paser_dict_to_list(bs_dict, level=2)
                     for bs in bs_list:
                         if bs not in covered_bs_list:
@@ -579,6 +581,12 @@ def load_examples(dataset_version, data):
         with open(example_data_path, "r") as file:
             all_examples = json.load(file)
 
+    # get comb2dial_ids
+    comb2dial_ids = {}
+    for comb in all_examples:
+        comb2dial_ids[comb] = str([dial[-1]["dial_id"] for dial in all_examples[comb]])
+    print(json.dumps(comb2dial_ids, indent=2))
+
     return all_examples
 
 
@@ -610,11 +618,11 @@ if __name__ == "__main__":
 
     # component 2: post-process the dialogue data
     train_data, val_data, test_data = get_data_split(
-        reader, n_train=10000, n_val=100, n_test=100
+        args.dataset_version, reader, n_train=10000, n_val=100, n_test=100
     )
 
     # component 3: retrieve examples for the domain combinations
-    examples = load_examples(train_data)
+    examples = load_examples(args.dataset_version, train_data)
 
     domain_combinations = {}
     for dial_id in train_data:

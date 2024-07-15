@@ -5,9 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-python -m spacy download en_core_web_sm
+#python -m spacy download en_core_web_sm
 cd ./ubar-preprocessing/data
-wget https://github.com/budzianowski/multiwoz/blob/master/data/MultiWOZ_2.1.zip?raw=true -O MultiWOZ_2.1.zip
+#wget https://github.com/budzianowski/multiwoz/blob/master/data/MultiWOZ_2.1.zip?raw=true -O MultiWOZ_2.1.zip
 unzip MultiWOZ_2.1.zip
 cd ..
 python data_analysis21.py

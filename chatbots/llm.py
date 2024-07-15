@@ -17,6 +17,7 @@ logger.setLevel(logging.INFO)
 import time
 import json
 import torch
+from copy import deepcopy
 from typing import Any, Dict, List, Union
 from transformers import AutoModelForCausalLM, AutoModel, AutoTokenizer, AutoConfig
 
@@ -243,6 +244,8 @@ class chat_completion(object):
         n_seqs: int = 1,
         stop: List[str] = ["\n\n"],  # ["\n\n", "###", "User", "Assistant", "Example"]
     ) -> List[str]:
+        in_out = {}
+
         if self.template == "chatgpt":
             # system messages
             system_message = ""
@@ -250,6 +253,10 @@ class chat_completion(object):
                 if message["role"] == "system":
                     system_message = message["content"]
                     break
+
+            # separate function calls and function outputs
+            messages = self.conversation.separate_func_call_and_output(messages)
+            examples = [self.conversation.separate_func_call_and_output(example) for example in examples]
 
             # construct system prompt with only examples
             system_prompt = self.conversation.get_prompt(
@@ -261,6 +268,12 @@ class chat_completion(object):
                 if message["role"] == "system":
                     message["content"] = system_prompt
                     break
+
+            in_out["prompt"] = {
+                "messages": deepcopy(messages),
+                "functions": functions,
+                "function_call": function_call,
+            }
 
             t1 = time.time()
             outputs = self.model.generate(
@@ -309,6 +322,8 @@ class chat_completion(object):
             if self.verbose:
                 print(prompt)
 
+            in_out["prompt"] = prompt
+
             t1 = time.time()
             if self.api:  # docker run
                 data = {
@@ -354,8 +369,10 @@ class chat_completion(object):
                 output["input_tokens"] = input_tokens
                 outputs[idx] = output
 
+        in_out["output"] = outputs
+
         # chatml format: {"content": "xxx", "function": {}}
-        return outputs
+        return outputs, in_out
 
 
 """

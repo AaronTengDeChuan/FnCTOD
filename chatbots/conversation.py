@@ -46,7 +46,7 @@ class Conversation(object):
         if self.template_name == "chatgpt":
             self.system_template = "{system_message}"
             self.separators = ("\n\n", "\n", "\n")
-            self.roles = ("user", "assistant")
+            self.roles = ("user", "assistant", "function")
             self.colon = ": "
         elif self.template_name == "claude":
             self.system_template = "{system_message}"
@@ -100,6 +100,29 @@ class Conversation(object):
             self.roles = roles
             self.colon = colon
             self.separators = separators
+
+    def separate_func_call_and_output(self, messages):
+        new_messages = []
+        for idx, message in enumerate(messages):
+            if message["role"] in ["system", "user"]:
+                new_messages.append(message)
+            elif message["role"] == "assistant" and "function_call" not in message:
+                new_messages.append(message)
+            elif message["role"] == "assistant" and "function_call" in message:
+                function_call = message["function_call"]
+                if "results" in function_call:
+                    assert function_call["results"], f"Empty results: {message} ({idx + 1} / {len(messages)})"
+                    assert idx == len(messages) - 1 or message["content"], f"Empty content: {message} ({idx + 1} / {len(messages)})"
+                    new_messages.append({"role": "assistant", "content": f"FunctionCall(arguments={function_call.get('arguments')}, name='{function_call.get('function')}')"})
+                    new_messages.append({"role": "function", "name": function_call.get('function'), "content": function_call["results"]})
+                    if message["content"]:
+                        new_messages.append({"role": "assistant", "content": message["content"]})
+                else:
+                    new_messages.append(message)
+            else:
+                raise ValueError(f"Invalid role: {message['role']}")
+        return new_messages
+
 
     def get_prompt(
         self,
@@ -180,7 +203,12 @@ class Conversation(object):
         if not separators:
             separators = self.separators
 
-        user_role, assistant_role = roles
+        if len(roles) == 2:
+            user_role, assistant_role = roles
+        elif len(roles) == 3:
+            user_role, assistant_role, function_role = roles
+        else:
+            raise ValueError(f"Invalid roles: {roles}")
 
         # content window
         messages = messages[-(self.offset + 1) :]
@@ -221,9 +249,13 @@ class Conversation(object):
                     ret += separators[2]
                 if midx + 1 == len(messages) and predict:
                     ret = ret.strip()
+            elif message["role"] == "function":
+                if midx + 1 == len(messages):
+                    ret += separators[2]
+                ret += function_role + colon + message["content"] + separators[2]
 
         # add the prefix to trigger the arguments output
-        if function_call:
+        if isinstance(function_call, dict) and function_call:
             function_name = function_call["name"]
             assistant_content = f'{{"function": "{function_name}", "arguments":'
             ret += (
@@ -401,7 +433,7 @@ class Conversation(object):
         function_call_prefix = self.function_call_prefix.strip()
 
         # the beginning of next turn
-        if "name" in function_call and "arguments" not in function_call:
+        if isinstance(function_call, dict) and "name" in function_call and "arguments" not in function_call:
             function_name = function_call["name"]
             response_prefix = f'{{"function": "{function_name}", "arguments": '
             text = response_prefix + text
