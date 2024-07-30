@@ -97,7 +97,8 @@ class MultiWozEvaluator(object):
         else:
             raise NotImplementedError
         self.cfg = Config(data_prefix="./data/multiwoz/data/")
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+        # self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+        self.tokenizer = None
         self.reader = MultiWozReader(self.tokenizer, self.cfg, data_mode="test")
 
         self.domains = ontology.all_domains

@@ -8,6 +8,9 @@
 #
 
 import os
+import re
+import asyncio
+import aiohttp
 import requests
 import logging
 
@@ -27,7 +30,7 @@ import anthropic
 import tiktoken
 
 from chatbots.utils import *
-from chatbots.configs import llm_configs
+from chatbots.configs import llm_configs, get_model_name
 from chatbots.conversation import Conversation
 
 """
@@ -37,7 +40,7 @@ The main class for all LLMs: api-accessible gpt and claude, huggingface's llama-
 
 class LLM:
     def __init__(
-        self, model_name, interval=0.5, timeout=10.0, exp=2, patience=10, max_interval=4
+        self, model_name, no_load_model=False, interval=0.5, timeout=10.0, exp=2, patience=10, max_interval=4
     ):
         self.model_name = model_name
         self.openai_api = (
@@ -67,8 +70,22 @@ class LLM:
             )
             self.tokenizer = None
         else:  # HUGGINGFACE MODELS
-            print(model_name)
-            self.model, self.tokenizer = load_hf_model(model_name)
+            if no_load_model:
+                self.model = None
+                self.tokenizer = None
+            else:
+                print(model_name)
+                self.model, self.tokenizer = load_hf_model(model_name)
+                gen_pti = self.model.generation_config.pad_token_id
+                self.gen_config_pad_token_id = gen_pti
+                if gen_pti is not None:
+                    gen_pt = self.tokenizer.convert_ids_to_tokens(gen_pti)
+                else:
+                    gen_pt = ""
+                print(f"'model.generation_config.pad_token_id': {gen_pti}\t{gen_pt}")
+                eos_id = self.tokenizer.eos_token_id
+                print(f"'tokenizer.eos_token_id': {eos_id}\t{self.tokenizer.convert_ids_to_tokens(eos_id)}")
+
 
     def generate(
         self,
@@ -141,6 +158,9 @@ class LLM:
             if not self.tokenizer.unk_token_id:
                 stop_token_ids.remove(self.tokenizer.unk_token_id)
 
+            extra_params = {}
+            if self.gen_config_pad_token_id is None:
+                extra_params["pad_token_id"] = self.tokenizer.eos_token_id
             outputs = self.model.generate(
                 **inputs,
                 do_sample=True,
@@ -149,15 +169,44 @@ class LLM:
                 max_new_tokens=max_tokens,
                 num_return_sequences=n_seqs,
                 eos_token_id=stop_token_ids,
+                **extra_params
             )
             generations = [
-                self.tokenizer.decode(
+                (self.tokenizer.decode(
                     output[inputs["input_ids"].size(1) :], skip_special_tokens=True
-                )
+                ), len(output[inputs["input_ids"].size(1) :]))
                 for output in outputs
             ]
 
         return generations
+
+
+async def async_http_request(url, json_data, counter, semaphore):
+    timeout = aiohttp.ClientTimeout(total=3 * 3600)
+    # timeout = aiohttp.ClientTimeout(total=100)
+
+    # reconnect when the request fails
+    retry_interval_exp = 1
+    interval = 0.5
+    exp = 2
+    patience = 3
+    max_interval = 4
+    async with semaphore:
+        while True and retry_interval_exp <= 3:
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, json=json_data) as response:
+                        res = await response.json()
+                break
+            except Exception as e:
+                wait_time = max(max_interval, interval * (exp**retry_interval_exp))
+                logging.warning(f"Error: {e}")
+                logging.warning(f"Retry in {wait_time} seconds")
+                await asyncio.sleep(wait_time)
+                retry_interval_exp += 1
+    if counter is not None:
+        counter.completed_requests += 1
+    return res
 
 
 """
@@ -170,6 +219,8 @@ class chat_completion(object):
         self,
         model,
         api=False,
+        host=None,
+        port=None,
         system_message: str = "",
         system_template: str = "{system_message}",
         roles: List[str] = ["User", "Assistant"],
@@ -180,17 +231,33 @@ class chat_completion(object):
         function_call_prefix: str = "<function_call>",
         function_call_suffix: str = "</function_call>\n",
         verbose: bool = False,
+        no_load_model: bool = False,
+        counter=None,
+        semaphore=None,
     ):
         self.verbose = verbose
         self.api = api
-        model_name = llm_configs[model]["model_name"]
+
+        model_name, model_port = get_model_name(model, no_load_model=no_load_model)
+        print(f"\nUsing '{model_name}' for finding the model '{model}'.")
+        self.base_url = f"http://{host}:{port if isinstance(port, int) else model_port}"
+        print(f"\nInference Server: {self.base_url}\n")
+
         self.model_name = model_name
+        self.counter = counter
+        self.semaphore = semaphore
 
         if self.api:  # docker api calling
-            port = llm_configs[model]["port"]
-            self.url = f"http://127.0.0.1:{port}/generate"
+            assert isinstance(self.base_url, str) and self.base_url, f"Invalid base_url: {self.base_url}"
+            self.url = f"{self.base_url}/v1/completions"
+            # port = llm_configs[model]["port"]
+            # self.url = f"http://127.0.0.1:{port}/generate"
         else:  # local inference
-            self.model = LLM(model_name=model_name)
+            self.model = LLM(model_name=model_name, no_load_model=no_load_model)
+
+        # NOTE: if apply_chat_template is set True, make sure the tokenizer has chat template that contains system template
+        self.apply_chat_template = False
+        self.tokenizer = None
 
         # default templates
         if "gpt-3.5" in model or "gpt-4" in model:
@@ -199,6 +266,16 @@ class chat_completion(object):
             template_name = "claude"
         elif "llama-2" in model and "-chat" in model:
             template_name = "llama2"
+        elif "llama-3" in model:
+            template_name = "llama2"
+            if not no_load_model:
+                tokenizer = AutoTokenizer.from_pretrained(
+                    model_name, use_fast=False, trust_remote_code=True)
+                if tokenizer.chat_template:
+                    self.apply_chat_template = True
+                    self.tokenizer = tokenizer
+                else:
+                    print(f"Tokenizer of '{model_name}' does not have chat template, using template '{template_name}'.")
         elif "fnctod-llama2" in model:
             template_name = "llama2"
         elif "baichuan" in model and "-chat" in model:
@@ -215,6 +292,8 @@ class chat_completion(object):
             template_name = "zephyr"
         elif "openassistant" in model:
             template_name = "openassistant"
+        else:
+            raise ValueError(f"Invalid template for model: {model}")
         self.template = template_name
 
         # the conversation template
@@ -229,9 +308,10 @@ class chat_completion(object):
             function_call_prefix=function_call_prefix,
             function_call_suffix=function_call_suffix,
             separators=separators,
+            tokenizer=self.tokenizer,
         )
 
-    def complete(
+    async def complete(
         self,
         messages: List[Dict] = [],
         functions: List[Dict] = [],
@@ -243,6 +323,7 @@ class chat_completion(object):
         max_tokens: int = 64,
         n_seqs: int = 1,
         stop: List[str] = ["\n\n"],  # ["\n\n", "###", "User", "Assistant", "Example"]
+        regex: str = None,
     ) -> List[str]:
         in_out = {}
 
@@ -316,8 +397,6 @@ class chat_completion(object):
                 function_call=function_call,
                 examples=examples,
             )
-            # input tokens
-            input_tokens = len(self.model.tokenizer.encode(prompt))
 
             if self.verbose:
                 print(prompt)
@@ -326,17 +405,65 @@ class chat_completion(object):
 
             t1 = time.time()
             if self.api:  # docker run
-                data = {
-                    "input": prompt,
-                    "temperature": temperature,
-                    "top_p": top_p,
-                    "max_tokens": max_tokens,
-                    "n_seqs": n_seqs,
-                    "stop": stop,
-                }
-                response = requests.post(self.url, json=data)
-                outputs = response.json()["generated_text"]
+                # data = {
+                #     "input": prompt,
+                #     "temperature": temperature,
+                #     "top_p": top_p,
+                #     "max_tokens": max_tokens,
+                #     "n_seqs": n_seqs,
+                #     "stop": stop,
+                # }
+                # response = requests.post(self.url, json=data)
+                # outputs = response.json()["generated_text"]
+
+                if regex and prompt.strip().endswith('"arguments":'):
+                    regex += r"\}"
+                    # regex += r"\}" + self.conversation.function_call_suffix
+
+                if regex:
+                    in_out["regex"] = regex
+
+                retry = True
+                max_retry = max(len(examples), 1)
+                while retry and max_retry > 0:
+                    retry = False
+                    data = {
+                        "model": "",
+                        "prompt": prompt.strip(),
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "max_tokens": max_tokens,
+                        "stop": stop if regex is None else None,
+                        "regex": regex,
+                        # "logprobs": 3,
+                    }
+                    response = await async_http_request(
+                        self.url, data, self.counter, self.semaphore)
+                    if "choices" in response:
+                        input_tokens = response["usage"]["prompt_tokens"]
+                        output_tokens = response["usage"]["completion_tokens"]
+                        outputs = [(choice["text"], output_tokens) for choice in response["choices"]]
+                    elif "meta_info" in response:
+                        input_tokens = response["meta_info"]["prompt_tokens"]
+                        output_tokens = response["meta_info"]["completion_tokens"]
+                        outputs = [(response["text"], output_tokens)]
+                    else:
+                        outputs = [(None, None)]
+                    if outputs[0][0] is None or (regex and re.fullmatch(regex, outputs[0][0]) is None):
+                        print(f"Invalid response: {response}")
+                        retry = True
+                        max_retry -= 1
+                        prompt = self.conversation.get_prompt(
+                            system_message=system_message,
+                            messages=messages,
+                            functions=functions,
+                            function_call=function_call,
+                            examples=examples[:max_retry],
+                        )
+                        in_out["prompt"] = prompt
+                        print(f"Retry with {min(len(examples), max_retry)} examples")
             else:
+                input_tokens = len(self.model.tokenizer.encode(prompt))
                 outputs = self.model.generate(
                     prompt=prompt,
                     functions=functions,
@@ -352,7 +479,7 @@ class chat_completion(object):
 
             # parse the output
             parsed_outputs = []
-            for output in outputs:
+            for output, output_tokens in outputs:
                 if self.verbose:
                     print("Before parsing:", output)
                 parsed_output = self.conversation.get_response(
@@ -360,13 +487,14 @@ class chat_completion(object):
                 )
                 if self.verbose:
                     print("After parsing:", parsed_output)
-                parsed_outputs.append(parsed_output)
+                parsed_outputs.append((parsed_output, output_tokens))
             outputs = parsed_outputs
 
             # cost summary
-            for idx, output in enumerate(outputs):
+            for idx, (output, out_tokens) in enumerate(outputs):
                 output["duration"] = duration
                 output["input_tokens"] = input_tokens
+                output["output_tokens"] = out_tokens
                 outputs[idx] = output
 
         in_out["output"] = outputs

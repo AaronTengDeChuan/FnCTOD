@@ -12,6 +12,8 @@ data/pre-training_corpora/separate_datasets/
 wandb/
 ckpt/
 outputs/
+temp_results/
+dcteng.txt
 
 # files
 *~
@@ -19,3 +21,4 @@ outputs/
 *.pyc
 *.bin
 *.slurm
+.idea/

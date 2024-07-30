@@ -1,7 +1,5 @@
 # coding: utf-8
 
-import os
-import json
 from copy import deepcopy
 
 def construct_prompt(messages, schema, active_domains, slot_desc_flag=True, PVs_flag=True):
@@ -89,7 +87,7 @@ def construct_prompt(messages, schema, active_domains, slot_desc_flag=True, PVs_
     return new_messages, domain_slot_specs
 
 
-def generate_dst(eval_turn, messages, schema, active_domains, completion_func):
+async def generate_dst(eval_turn, messages, schema, active_domains, completion_func):
     messages, domain_slot_specs = construct_prompt(messages, schema, active_domains)
     state = {}
     eval_in_out = []
@@ -100,7 +98,7 @@ def generate_dst(eval_turn, messages, schema, active_domains, completion_func):
             # continue
             new_messages = deepcopy(messages)
             new_messages[1]["content"] = domain_slot_specs[domain][slot]["prompt"]
-            response, in_out = completion_func(messages=new_messages)
+            response, in_out = await completion_func(messages=new_messages)
             # record value
             predict_value = response[0]["content"].strip().lower()
             # domain_slot_specs[domain][slot]["output"] = predict_value

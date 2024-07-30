@@ -8,6 +8,7 @@
 #
 
 import dataclasses
+from copy import deepcopy
 from enum import auto, IntEnum
 from typing import List, Any, Dict, Union
 import json
@@ -30,11 +31,13 @@ class Conversation(object):
         function_type: str = "json",
         function_call_prefix: str = "<function_call>",
         function_call_suffix: str = "</function_call>",
+        tokenizer=None,
         verbose: bool = False,
     ):
         self.template_name = template_name
         self._verbose = verbose
         self.offset = offset  # context window
+        self.tokenizer = tokenizer
 
         # function call template
         self.function_type = function_type
@@ -152,13 +155,18 @@ class Conversation(object):
 
         # combine them, fill in the template
         system_prompt = "\n\n".join(system_messages)
-        system_prompt = self.system_template.format(system_message=system_prompt)
 
-        # part 4: the current conversation, consisting of the current turn, with the function_call prefix
-        conversation = self.get_conversation(
-            messages=messages, function_call=function_call
-        )
-        ret = system_prompt + self.separators[0] + conversation
+        if self.tokenizer is None:
+            system_prompt = self.system_template.format(system_message=system_prompt)
+
+            # part 4: the current conversation, consisting of the current turn, with the function_call prefix
+            conversation = self.get_conversation(
+                messages=messages, function_call=function_call
+            )
+            ret = system_prompt + self.separators[0] + conversation
+        else:
+            # construct messages and then apply chat template
+            ret = self.apply_chat_template(system_prompt, messages=deepcopy(messages), function_call=function_call)
 
         return ret
 
@@ -183,9 +191,65 @@ class Conversation(object):
 
         return example_prompts
 
+    def apply_chat_template(
+            self,
+            system_prompt: str = "",
+            messages: List[Dict] = [],
+            function_call: Dict = {},
+    ) -> str:
+        if not messages:
+            return ""
+
+        new_messages = []
+        start_idx = 0
+        if messages[0]["role"] == "system":
+            messages[0]["content"] = system_prompt
+            new_messages.append(messages[0])
+            start_idx = 1
+
+        messages = messages[start_idx:][-(self.offset + 1):]
+        last_assistant_turn = None
+        for idx, message in enumerate(messages):
+            if message["role"] == "user":
+                new_messages.append(message)
+            elif message["role"] == "assistant":
+                if idx == len(messages) - 1:
+                    last_assistant_turn = message
+                    break
+                assistant_content = ""
+                # add function call
+                if "function_call" in message:
+                    function_call_json = json.dumps(message["function_call"])
+                    assistant_content += (
+                        self.function_call_prefix
+                        + function_call_json
+                        + self.function_call_suffix
+                    )
+                # add content
+                assistant_content += message["content"]
+                new_messages.append({"role": "assistant", "content": assistant_content})
+            else:
+                raise ValueError(f"Invalid role: {message['role']}")
+
+        ret = self.tokenizer.apply_chat_template(
+            new_messages, tokenize=False, add_generation_prompt=True)
+
+        if last_assistant_turn:
+            assert not (isinstance(function_call, dict) and function_call), \
+                f"The last message is an assistant turn, but the function call is not empty: {function_call}"
+            ret += last_assistant_turn["content"]
+
+        # add the prefix to trigger the arguments output
+        if isinstance(function_call, dict) and function_call:
+            function_name = function_call["name"]
+            assistant_content = f'{{"function": "{function_name}", "arguments":'
+            ret += self.function_call_prefix + assistant_content
+
+        return ret
+
     def get_conversation(
         self,
-        messages: List[List[str]] = (),
+        messages: List[Dict] = (),
         function_call: Dict = {},
         roles: List = [],
         colon: str = "",
@@ -420,11 +484,12 @@ class Conversation(object):
                     json_obj = s[first_left_brace : index + 1]
                     json_dict = json.loads(json_obj)
                     json_str = json.dumps(json_dict)
-                    return json_str
+                    return json_obj
                 except:
                     start = index + 1
             return ""
 
+        original_text = text
         text = text.lower().strip()
         # remove \_
         text = text.replace("\_", "_")
@@ -454,10 +519,11 @@ class Conversation(object):
                     parsed_function_call = json.loads(parsed_function_call)
                 else:
                     parsed_function_call = extract_first_dict(text)
-                    parsed_response = text.replace(parsed_function_call, "")
+                    parsed_response = text.replace(parsed_function_call, "").strip()
                     parsed_function_call = json.loads(parsed_function_call)
             except Exception as error:
-                print(error)
+                # print(error)
+                parsed_function_call = original_text
 
         # get response
         if "content" in required:
@@ -476,3 +542,66 @@ class Conversation(object):
             "function_call": parsed_function_call,
         }
         return ret
+
+
+import datetime
+
+
+def current_time():
+    """Get the current local time as a string."""
+    return str(datetime.now())
+
+
+def multiply(a: float, b: float):
+    """
+    A function that multiplies two numbers
+
+    Args:
+        a: The first number to multiply
+        b: The second number to multiply
+    """
+    return a * b
+
+
+tools = [current_time, multiply]
+
+
+if __name__ == '__main__':
+    from chatbots.configs import llm_configs
+    from transformers import AutoTokenizer
+
+    model_name = ["llama-2-13b-chat", "llama-3-8b", "llama-3-8b-instruct",
+                  "llama-3.1-8b", "llama-3.1-8b-instruct",
+                  "zephyr-7b-beta", "baichuan-13b-chat", "vicuna-13b-v1.5"]
+    name2tokenizer = {name: AutoTokenizer.from_pretrained(
+        llm_configs[name]["model_name"], trust_remote_code=True) for name in model_name}
+
+    messages = [
+        {"role": "system", "content": "This is a conversation between a user and an assistant."},
+        {"role": "user", "content": "Hello, how are you?"},
+        {"role": "assistant", "content": "I am fine, thank you."},
+        {"role": "user", "content": "What is the weather today?"},
+        {"role": "assistant", "content": "It is sunny."},
+        {"role": "user", "content": "Can you help me with something?"},
+    ]
+
+    fc_prefix = "<function_call> "
+    assistant_content = f'{{"function": "find_book_hotel", "arguments":'
+    assistant_prefix = fc_prefix + assistant_content
+
+    for name, tokenizer in name2tokenizer.items():
+        chat_prompt = tokenizer.apply_chat_template(
+            messages, tools=tools, tokenize=False, add_generation_prompt=True)
+        print(f"########### Model: {name} ###########")
+        print(f"CHAT TEMPLATE: {tokenizer.chat_template}\n")
+        print(f"###{chat_prompt}###")
+        print(tokenizer.convert_ids_to_tokens(tokenizer.encode(chat_prompt)))
+        print(f"###{chat_prompt + assistant_prefix}###")
+        print(tokenizer.convert_ids_to_tokens(tokenizer.encode(chat_prompt + assistant_prefix)))
+
+        chat_prompt = tokenizer.apply_chat_template(messages + [{"role": "assistant", "content": assistant_prefix}], tokenize=False, add_generation_prompt=False)
+        print(f"###{chat_prompt}###")
+        print(tokenizer.convert_ids_to_tokens(tokenizer.encode(chat_prompt)))
+
+        print("\n\n")
+

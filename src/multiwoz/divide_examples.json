@@ -1,0 +1,1273 @@
+{
+    "[taxi]": [
+        [
+            {
+                "dial_id": "sng01375",
+                "turn_num": 0,
+                "user": "i need a taxi to pick me up after 21:25 at the cambridge belfry .",
+                "resp": "and where are you going ?",
+                "nodelx_resp": "and where are you going ?",
+                "bspn": "[taxi] leave 21:25 departure cambridge belfry",
+                "bspn_dict": {
+                    "[taxi]": {
+                        "leave_at_or_after": "21:25",
+                        "departure": "cambridge belfry"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[taxi]": {
+                        "leave_at_or_after": "21:25",
+                        "departure": "cambridge belfry"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "[taxi] leave 21:25 departure cambridge belfry",
+                "turn_bspn_dict": {
+                    "[taxi]": {
+                        "leave_at_or_after": "21:25",
+                        "departure": "cambridge belfry"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[taxi]": {
+                        "leave_at_or_after": "user_inform",
+                        "departure": "user_inform"
+                    }
+                },
+                "bsdx": "[taxi] leave departure",
+                "db": 0,
+                "dspn": "[taxi]",
+                "aspn": "[taxi] [request] destination",
+                "aspn_dict": {
+                    "[taxi]": {
+                        "[request]": [
+                            "destination"
+                        ]
+                    }
+                },
+                "all_domains": [
+                    "[taxi]"
+                ]
+            },
+            {
+                "dial_id": "sng01375",
+                "turn_num": 1,
+                "user": "the taxi should go to the gardenia .",
+                "resp": "your taxi will pick you up at [value_arrive] . it is a [value_car]",
+                "nodelx_resp": "your taxi will pick you up at 21:30 . it is a grey honda .",
+                "bspn": "[taxi] leave 21:30 departure cambridge belfry destination the gardenia",
+                "bspn_dict": {
+                    "[taxi]": {
+                        "leave_at_or_after": "21:30",
+                        "departure": "cambridge belfry",
+                        "destination": "the gardenia"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[taxi]": {
+                        "leave_at_or_after": "21:25",
+                        "departure": "cambridge belfry",
+                        "destination": "the gardenia"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "[taxi] leave 21:30 destination the gardenia",
+                "turn_bspn_dict": {
+                    "[taxi]": {
+                        "leave_at_or_after": "21:30",
+                        "destination": "the gardenia"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[taxi]": {
+                        "destination": "user_inform"
+                    }
+                },
+                "bsdx": "[taxi] leave departure destination",
+                "db": 0,
+                "dspn": "[taxi]",
+                "aspn": "[taxi] [inform] car arrive",
+                "aspn_dict": {
+                    "[taxi]": {
+                        "[inform]": [
+                            "car",
+                            "arrive"
+                        ]
+                    }
+                },
+                "all_domains": [
+                    "[taxi]"
+                ]
+            },
+            {
+                "dial_id": "sng01375",
+                "turn_num": 2,
+                "user": "i 'll also need the contact number please .",
+                "resp": "the contact number is [value_phone] .",
+                "nodelx_resp": "the contact number is 07650376516 .",
+                "bspn": "[taxi] leave 21:30 departure cambridge belfry destination the gardenia",
+                "bspn_dict": {
+                    "[taxi]": {
+                        "leave_at_or_after": "21:30",
+                        "departure": "cambridge belfry",
+                        "destination": "the gardenia"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[taxi]": {
+                        "leave_at_or_after": "21:25",
+                        "departure": "cambridge belfry",
+                        "destination": "the gardenia"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "",
+                "turn_bspn_dict": {},
+                "turn_svs_dict": {},
+                "bsdx": "[taxi] leave departure destination",
+                "db": 0,
+                "dspn": "[taxi]",
+                "aspn": "[taxi] [inform] phone",
+                "aspn_dict": {
+                    "[taxi]": {
+                        "[inform]": [
+                            "phone"
+                        ]
+                    }
+                },
+                "all_domains": [
+                    "[taxi]"
+                ]
+            },
+            {
+                "dial_id": "sng01375",
+                "turn_num": 3,
+                "user": "than you , i think that is all i need for now .",
+                "resp": "thank you for using our services .",
+                "nodelx_resp": "thank you for using our services .",
+                "bspn": "[taxi] leave 21:30 departure cambridge belfry destination the gardenia",
+                "bspn_dict": {
+                    "[taxi]": {
+                        "leave_at_or_after": "21:30",
+                        "departure": "cambridge belfry",
+                        "destination": "the gardenia"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[taxi]": {
+                        "leave_at_or_after": "21:25",
+                        "departure": "cambridge belfry",
+                        "destination": "the gardenia"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "",
+                "turn_bspn_dict": {},
+                "turn_svs_dict": {},
+                "bsdx": "[taxi] leave departure destination",
+                "db": 0,
+                "dspn": "[general]",
+                "aspn": "[general] [greet]",
+                "aspn_dict": {
+                    "[general]": {
+                        "[greet]": []
+                    }
+                },
+                "all_domains": [
+                    "[general]",
+                    "[taxi]"
+                ]
+            }
+        ]
+    ],
+    "[hotel]": [
+        [
+            {
+                "dial_id": "sng1209",
+                "turn_num": 0,
+                "user": "i am looking for a moderate -ly priced 4 star hotel .",
+                "resp": "okay i can help you with that . what area would you like to stay in ?",
+                "nodelx_resp": "okay i can help you with that . what area would you like to stay in ?",
+                "bspn": "[hotel] pricerange moderate stars 4",
+                "bspn_dict": {
+                    "[hotel]": {
+                        "pricerange": "moderate",
+                        "stars": "4"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[hotel]": {
+                        "pricerange": "moderate",
+                        "stars": "4"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "[hotel] pricerange moderate stars 4",
+                "turn_bspn_dict": {
+                    "[hotel]": {
+                        "pricerange": "moderate",
+                        "stars": "4"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[hotel]": {
+                        "pricerange": "user_inform",
+                        "stars": "user_inform"
+                    }
+                },
+                "bsdx": "[hotel] pricerange stars",
+                "db": 1,
+                "dspn": "[hotel]",
+                "aspn": "[general] [greet] [hotel] [request] area",
+                "aspn_dict": {
+                    "[general]": {
+                        "[greet]": []
+                    },
+                    "[hotel]": {
+                        "[request]": [
+                            "area"
+                        ]
+                    }
+                },
+                "all_domains": [
+                    "[hotel]"
+                ]
+            },
+            {
+                "dial_id": "sng1209",
+                "turn_num": 1,
+                "user": "i do n't have a preference for location , but it should be in the moderate price range and should have a star rating of 4 .",
+                "resp": "there are [value_choice] [value_type] with a [value_stars] start rating and in the [value_price] price range . what area did you have in mind ?",
+                "nodelx_resp": "there are 33 hotel -s with a 4 start rating and in the moderate price range . what area did you have in mind ?",
+                "bspn": "[hotel] pricerange moderate stars 4 area dontcare",
+                "bspn_dict": {
+                    "[hotel]": {
+                        "pricerange": "moderate",
+                        "stars": "4",
+                        "area": "dontcare"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[hotel]": {
+                        "pricerange": "moderate",
+                        "stars": "4",
+                        "area": "dontcare"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "[hotel] area dontcare",
+                "turn_bspn_dict": {
+                    "[hotel]": {
+                        "area": "dontcare"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[hotel]": {
+                        "pricerange": "user_inform",
+                        "stars": "user_inform",
+                        "area": "user_inform"
+                    }
+                },
+                "bsdx": "[hotel] pricerange stars area",
+                "db": 1,
+                "dspn": "[hotel]",
+                "aspn": "[hotel] [inform] price choice type stars [request] area",
+                "aspn_dict": {
+                    "[hotel]": {
+                        "[inform]": [
+                            "price",
+                            "choice",
+                            "type",
+                            "stars"
+                        ],
+                        "[request]": [
+                            "area"
+                        ]
+                    }
+                },
+                "all_domains": [
+                    "[hotel]"
+                ]
+            },
+            {
+                "dial_id": "sng1209",
+                "turn_num": 2,
+                "user": "it should also include free wifi .",
+                "resp": "there are no hotel -s that match your criteria . would you be ok with a [value_type] ?",
+                "nodelx_resp": "there are no hotel -s that match your criteria . would you be ok with a guest house ?",
+                "bspn": "[hotel] pricerange moderate stars 4 area dontcare internet yes type hotel",
+                "bspn_dict": {
+                    "[hotel]": {
+                        "pricerange": "moderate",
+                        "stars": "4",
+                        "area": "dontcare",
+                        "internet": "yes",
+                        "accommodation_type": "hotel"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[hotel]": {
+                        "pricerange": "moderate",
+                        "stars": "4",
+                        "area": "dontcare",
+                        "internet": "yes"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "[hotel] internet yes type hotel",
+                "turn_bspn_dict": {
+                    "[hotel]": {
+                        "internet": "yes",
+                        "accommodation_type": "hotel"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[hotel]": {
+                        "pricerange": "assistant_inform",
+                        "stars": "assistant_inform",
+                        "internet": "user_inform"
+                    }
+                },
+                "bsdx": "[hotel] pricerange stars area internet type",
+                "db": 1,
+                "dspn": "[hotel]",
+                "aspn": "[hotel] [select] type [nooffer]",
+                "aspn_dict": {
+                    "[hotel]": {
+                        "[select]": [
+                            "type"
+                        ],
+                        "[nooffer]": []
+                    }
+                },
+                "all_domains": [
+                    "[hotel]"
+                ]
+            },
+            {
+                "dial_id": "sng1209",
+                "turn_num": 3,
+                "user": "yes . i 'll need accomodations for 8 people and 3 nights starting from thursday .",
+                "resp": "i would recommend [value_name] in the [value_area] area or [value_name] in the [value_area] area . which would you prefer ?",
+                "nodelx_resp": "i would recommend acorn guest house in the north area or a and b guest house in the east area . which would you prefer ?",
+                "bspn": "[hotel] pricerange moderate stars 4 area dontcare internet yes type guest house",
+                "bspn_dict": {
+                    "[hotel]": {
+                        "pricerange": "moderate",
+                        "stars": "4",
+                        "area": "dontcare",
+                        "internet": "yes",
+                        "accommodation_type": "guest house"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[hotel]": {
+                        "pricerange": "moderate",
+                        "stars": "4",
+                        "area": "dontcare",
+                        "internet": "yes",
+                        "people": "8",
+                        "day": "thursday",
+                        "stay": "3"
+                    }
+                },
+                "confirm_bspn_dict": {
+                    "[hotel]": {
+                        "accommodation_type": "guest house"
+                    }
+                },
+                "turn_bspn": "[hotel] type guest house",
+                "turn_bspn_dict": {
+                    "[hotel]": {
+                        "accommodation_type": "guest house"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[hotel]": {
+                        "accommodation_type": "user_confirm",
+                        "people": "user_inform",
+                        "day": "user_inform",
+                        "stay": "user_inform"
+                    }
+                },
+                "bsdx": "[hotel] pricerange stars area internet type",
+                "db": 1,
+                "dspn": "[hotel]",
+                "aspn": "[hotel] [recommend] name area [select]",
+                "aspn_dict": {
+                    "[hotel]": {
+                        "[recommend]": [
+                            "name",
+                            "area"
+                        ],
+                        "[select]": []
+                    }
+                },
+                "all_domains": [
+                    "[hotel]"
+                ]
+            },
+            {
+                "dial_id": "sng1209",
+                "turn_num": 4,
+                "user": "acorn , please . could you book that ?",
+                "resp": "the reservation was successful , your reference number is [value_reference]",
+                "nodelx_resp": "the reservation was successful , your reference number is k6cpblhm",
+                "bspn": "[hotel] pricerange moderate stars 4 area dontcare internet yes type guest house people 8 day thursday stay 3",
+                "bspn_dict": {
+                    "[hotel]": {
+                        "pricerange": "moderate",
+                        "stars": "4",
+                        "area": "dontcare",
+                        "internet": "yes",
+                        "accommodation_type": "guest house",
+                        "people": "8",
+                        "day": "thursday",
+                        "stay": "3"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[hotel]": {
+                        "pricerange": "moderate",
+                        "stars": "4",
+                        "area": "dontcare",
+                        "internet": "yes",
+                        "people": "8",
+                        "day": "thursday",
+                        "stay": "3"
+                    }
+                },
+                "confirm_bspn_dict": {
+                    "[hotel]": {
+                        "accommodation_type": "guest house",
+                        "name": "acorn guest house"
+                    }
+                },
+                "turn_bspn": "[hotel] people 8 day thursday stay 3",
+                "turn_bspn_dict": {
+                    "[hotel]": {
+                        "people": "8",
+                        "day": "thursday",
+                        "stay": "3"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[hotel]": {
+                        "area": "assistant_inform",
+                        "name": "user_confirm"
+                    }
+                },
+                "bsdx": "[hotel] pricerange stars area internet type people day stay",
+                "db": 1,
+                "dspn": "[hotel]",
+                "aspn": "[hotel] [offerbooked] reference",
+                "aspn_dict": {
+                    "[hotel]": {
+                        "[offerbooked]": [
+                            "reference"
+                        ]
+                    }
+                },
+                "all_domains": [
+                    "[hotel]"
+                ]
+            },
+            {
+                "dial_id": "sng1209",
+                "turn_num": 5,
+                "user": "thank you . that should be it , thank you for your time .",
+                "resp": "you are welcome , glad i could help .",
+                "nodelx_resp": "you are welcome , glad i could help .",
+                "bspn": "[hotel] pricerange moderate stars 4 area dontcare internet yes type guest house people 8 day thursday stay 3 name acorn guest house",
+                "bspn_dict": {
+                    "[hotel]": {
+                        "pricerange": "moderate",
+                        "stars": "4",
+                        "area": "dontcare",
+                        "internet": "yes",
+                        "accommodation_type": "guest house",
+                        "people": "8",
+                        "day": "thursday",
+                        "stay": "3",
+                        "name": "acorn guest house"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[hotel]": {
+                        "pricerange": "moderate",
+                        "stars": "4",
+                        "area": "dontcare",
+                        "internet": "yes",
+                        "people": "8",
+                        "day": "thursday",
+                        "stay": "3"
+                    }
+                },
+                "confirm_bspn_dict": {
+                    "[hotel]": {
+                        "accommodation_type": "guest house",
+                        "name": "acorn guest house"
+                    }
+                },
+                "turn_bspn": "[hotel] name acorn guest house",
+                "turn_bspn_dict": {
+                    "[hotel]": {
+                        "name": "acorn guest house"
+                    }
+                },
+                "turn_svs_dict": {},
+                "bsdx": "[hotel] pricerange stars area internet type people day stay name",
+                "db": 1,
+                "dspn": "[hotel]",
+                "aspn": "[general] [welcome] [bye]",
+                "aspn_dict": {
+                    "[general]": {
+                        "[welcome]": [],
+                        "[bye]": []
+                    }
+                },
+                "all_domains": [
+                    "[hotel]"
+                ]
+            }
+        ]
+    ],
+    "[attraction]": [
+        [
+            {
+                "dial_id": "sng1113",
+                "turn_num": 0,
+                "user": "i would like to visit a cinema of the west side .",
+                "resp": "i am sorry but i do not have any [value_type] on the [value_area] of town , can i check a diffrent location or help find something else for you ?",
+                "nodelx_resp": "i am sorry but i do not have any cinema 's on the west side of town , can i check a diffrent location or help find something else for you ?",
+                "bspn": "[attraction] type cinema area west",
+                "bspn_dict": {
+                    "[attraction]": {
+                        "type": "cinema",
+                        "area": "west"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[attraction]": {
+                        "type": "cinema",
+                        "area": "west"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "[attraction] type cinema area west",
+                "turn_bspn_dict": {
+                    "[attraction]": {
+                        "type": "cinema",
+                        "area": "west"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[attraction]": {
+                        "type": "user_inform",
+                        "area": "user_inform"
+                    }
+                },
+                "bsdx": "[attraction] type area",
+                "db": 1,
+                "dspn": "[attraction]",
+                "aspn": "[attraction] [nooffer] area type [request] type area",
+                "aspn_dict": {
+                    "[attraction]": {
+                        "[nooffer]": [
+                            "area",
+                            "type"
+                        ],
+                        "[request]": [
+                            "type",
+                            "area"
+                        ]
+                    }
+                },
+                "all_domains": [
+                    "[attraction]"
+                ]
+            },
+            {
+                "dial_id": "sng1113",
+                "turn_num": 1,
+                "user": "how about a museum then ?",
+                "resp": "i have [value_choice] [value_type] in the [value_area] of the city , 6 are [value_price] entry and 1 is [value_price] . do you have a preference for a museum or a [value_type] ?",
+                "nodelx_resp": "i have 7 museums in the west of the city , 6 are free entry and 1 is 3.50 . do you have a preference for a museum or a gallery ?",
+                "bspn": "[attraction] type museum area west",
+                "bspn_dict": {
+                    "[attraction]": {
+                        "type": "museum",
+                        "area": "west"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[attraction]": {
+                        "type": "museum",
+                        "area": "west"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "[attraction] type museum",
+                "turn_bspn_dict": {
+                    "[attraction]": {
+                        "type": "museum"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[attraction]": {
+                        "area": "assistant_inform",
+                        "type": "user_inform"
+                    }
+                },
+                "bsdx": "[attraction] type area",
+                "db": 1,
+                "dspn": "[attraction]",
+                "aspn": "[attraction] [select] type [inform] price choice type area",
+                "aspn_dict": {
+                    "[attraction]": {
+                        "[select]": [
+                            "type"
+                        ],
+                        "[inform]": [
+                            "price",
+                            "choice",
+                            "type",
+                            "area"
+                        ]
+                    }
+                },
+                "all_domains": [
+                    "[attraction]"
+                ]
+            },
+            {
+                "dial_id": "sng1113",
+                "turn_num": 2,
+                "user": "i would prefer a museum . 1 with free entry if possible .",
+                "resp": "[value_name] is lovely , and they have [value_price] . would that fit your needs ?",
+                "nodelx_resp": "the museum of classical archaeology is lovely , and they have no entrance fee . would that fit your needs ?",
+                "bspn": "[attraction] type museum area west",
+                "bspn_dict": {
+                    "[attraction]": {
+                        "type": "museum",
+                        "area": "west"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[attraction]": {
+                        "type": "museum",
+                        "area": "west"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "",
+                "turn_bspn_dict": {},
+                "turn_svs_dict": {
+                    "[attraction]": {
+                        "area": "assistant_inform",
+                        "type": "user_confirm"
+                    }
+                },
+                "bsdx": "[attraction] type area",
+                "db": 1,
+                "dspn": "[attraction]",
+                "aspn": "[attraction] [recommend] name price [offerbook]",
+                "aspn_dict": {
+                    "[attraction]": {
+                        "[recommend]": [
+                            "name",
+                            "price"
+                        ],
+                        "[offerbook]": []
+                    }
+                },
+                "all_domains": [
+                    "[attraction]"
+                ]
+            },
+            {
+                "dial_id": "sng1113",
+                "turn_num": 3,
+                "user": "that is fine . book me a ticket and get me a reference number .",
+                "resp": "we do n't have the ability to book tickets for the museum from here , but if you would like to contact them , their phone number is [value_phone] . can i help with anything else ?",
+                "nodelx_resp": "we do n't have the ability to book tickets for the museum from here , but if you would like to contact them , their phone number is 01223335153 . can i help with anything else ?",
+                "bspn": "[attraction] type museum area west name museum of classical archaeology",
+                "bspn_dict": {
+                    "[attraction]": {
+                        "type": "museum",
+                        "area": "west",
+                        "name": "museum of classical archaeology"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[attraction]": {
+                        "type": "museum",
+                        "area": "west"
+                    }
+                },
+                "confirm_bspn_dict": {
+                    "[attraction]": {
+                        "name": "museum of classical archaeology"
+                    }
+                },
+                "turn_bspn": "[attraction] name museum of classical archaeology",
+                "turn_bspn_dict": {
+                    "[attraction]": {
+                        "name": "museum of classical archaeology"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[attraction]": {
+                        "name": "user_confirm"
+                    }
+                },
+                "bsdx": "[attraction] type area name",
+                "db": 1,
+                "dspn": "[attraction]",
+                "aspn": "[attraction] [inform] phone [general] [reqmore]",
+                "aspn_dict": {
+                    "[attraction]": {
+                        "[inform]": [
+                            "phone"
+                        ]
+                    },
+                    "[general]": {
+                        "[reqmore]": []
+                    }
+                },
+                "all_domains": [
+                    "[attraction]"
+                ]
+            },
+            {
+                "dial_id": "sng1113",
+                "turn_num": 4,
+                "user": "that is all , thank you .",
+                "resp": "you are welcome . thank you for using cambridge towninfo [value_area] . goodbye .",
+                "nodelx_resp": "you are welcome . thank you for using cambridge towninfo centre . goodbye .",
+                "bspn": "[attraction] type museum area west name museum of classical archaeology",
+                "bspn_dict": {
+                    "[attraction]": {
+                        "type": "museum",
+                        "area": "west",
+                        "name": "museum of classical archaeology"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[attraction]": {
+                        "type": "museum",
+                        "area": "west"
+                    }
+                },
+                "confirm_bspn_dict": {
+                    "[attraction]": {
+                        "name": "museum of classical archaeology"
+                    }
+                },
+                "turn_bspn": "",
+                "turn_bspn_dict": {},
+                "turn_svs_dict": {
+                    "[attraction]": {
+                        "name": "assistant_inform"
+                    }
+                },
+                "bsdx": "[attraction] type area name",
+                "db": 1,
+                "dspn": "[general]",
+                "aspn": "[general] [welcome] [bye]",
+                "aspn_dict": {
+                    "[general]": {
+                        "[welcome]": [],
+                        "[bye]": []
+                    }
+                },
+                "all_domains": [
+                    "[general]",
+                    "[attraction]"
+                ]
+            }
+        ]
+    ],
+    "[train]": [
+        [
+            {
+                "dial_id": "sng0311",
+                "turn_num": 0,
+                "user": "i am looking for a train departing from bishops stortford .",
+                "resp": "there are [value_choice] trains departing from that location , would you like to narrow it down some ?",
+                "nodelx_resp": "there are 70 trains departing from that location , would you like to narrow it down some ?",
+                "bspn": "[train] departure bishops stortford",
+                "bspn_dict": {
+                    "[train]": {
+                        "departure": "bishops stortford"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[train]": {
+                        "departure": "bishops stortford"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "[train] departure bishops stortford",
+                "turn_bspn_dict": {
+                    "[train]": {
+                        "departure": "bishops stortford"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[train]": {
+                        "departure": "user_inform"
+                    }
+                },
+                "bsdx": "[train] departure",
+                "db": 1,
+                "dspn": "[train]",
+                "aspn": "[train] [inform] choice",
+                "aspn_dict": {
+                    "[train]": {
+                        "[inform]": [
+                            "choice"
+                        ]
+                    }
+                },
+                "all_domains": [
+                    "[train]"
+                ]
+            },
+            {
+                "dial_id": "sng0311",
+                "turn_num": 1,
+                "user": "i am looking to go to cambridge on thursday .",
+                "resp": "i have [value_choice] available trains . is there a particular time you would like to leave or arrive by ?",
+                "nodelx_resp": "i have 10 available trains . is there a particular time you would like to leave or arrive by ?",
+                "bspn": "[train] departure bishops stortford destination cambridge day thursday",
+                "bspn_dict": {
+                    "[train]": {
+                        "departure": "bishops stortford",
+                        "destination": "cambridge",
+                        "day": "thursday"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[train]": {
+                        "departure": "bishops stortford",
+                        "destination": "cambridge",
+                        "day": "thursday"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "[train] destination cambridge day thursday",
+                "turn_bspn_dict": {
+                    "[train]": {
+                        "destination": "cambridge",
+                        "day": "thursday"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[train]": {
+                        "departure": "assistant_inform",
+                        "destination": "user_inform",
+                        "day": "user_inform"
+                    }
+                },
+                "bsdx": "[train] departure destination day",
+                "db": 1,
+                "dspn": "[train]",
+                "aspn": "[train] [inform] choice [request] leave arrive",
+                "aspn_dict": {
+                    "[train]": {
+                        "[inform]": [
+                            "choice"
+                        ],
+                        "[request]": [
+                            "leave",
+                            "arrive"
+                        ]
+                    }
+                },
+                "all_domains": [
+                    "[train]"
+                ]
+            },
+            {
+                "dial_id": "sng0311",
+                "turn_num": 2,
+                "user": "i need to leave on thursday and get there by 09:15 , is that ok ?",
+                "resp": "yes . there are [value_choice] available trains . 1 leaves at [value_leave] and arrives by [value_arrive] and the other leaves by [value_leave] and arrives by [value_arrive] . which would you prefer ?",
+                "nodelx_resp": "yes . there are 2 available trains . 1 leaves at 05:29 and arrives by 06:07 and the other leaves by 07:29 and arrives by 08:07 . which would you prefer ?",
+                "bspn": "[train] departure bishops stortford destination cambridge day thursday arrive 09:15",
+                "bspn_dict": {
+                    "[train]": {
+                        "departure": "bishops stortford",
+                        "destination": "cambridge",
+                        "day": "thursday",
+                        "arrive_by": "09:15"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[train]": {
+                        "departure": "bishops stortford",
+                        "destination": "cambridge",
+                        "day": "thursday",
+                        "arrive_by": "09:15"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "[train] arrive 09:15",
+                "turn_bspn_dict": {
+                    "[train]": {
+                        "arrive_by": "09:15"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[train]": {
+                        "day": "user_inform",
+                        "destination": "user_inform",
+                        "arrive_by": "user_inform"
+                    }
+                },
+                "bsdx": "[train] departure destination day arrive",
+                "db": 1,
+                "dspn": "[train]",
+                "aspn": "[train] [inform] arrive choice leave",
+                "aspn_dict": {
+                    "[train]": {
+                        "[inform]": [
+                            "arrive",
+                            "choice",
+                            "leave"
+                        ]
+                    }
+                },
+                "all_domains": [
+                    "[train]"
+                ]
+            },
+            {
+                "dial_id": "sng0311",
+                "turn_num": 3,
+                "user": "i would like the later 1 , please . i 'll need 8 tickets .",
+                "resp": "sure , we have [value_choice] [value_id] leaves at [value_leave] and arrives at [value_arrive] . for 8 people your reference number is : [value_reference] .",
+                "nodelx_resp": "sure , we have 1 other option tr1242 leaves at 07:29 and arrives at 08:07 . for 8 people your reference number is : 6a76vgsk .",
+                "bspn": "[train] departure bishops stortford destination cambridge day thursday arrive 09:15 people 8",
+                "bspn_dict": {
+                    "[train]": {
+                        "departure": "bishops stortford",
+                        "destination": "cambridge",
+                        "day": "thursday",
+                        "arrive_by": "09:15",
+                        "people": "8"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[train]": {
+                        "departure": "bishops stortford",
+                        "destination": "cambridge",
+                        "day": "thursday",
+                        "arrive_by": "09:15",
+                        "people": "8"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "[train] people 8",
+                "turn_bspn_dict": {
+                    "[train]": {
+                        "people": "8"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[train]": {
+                        "leave_at_or_after": "assistant_inform",
+                        "arrive_by": "assistant_inform",
+                        "people": "user_inform"
+                    }
+                },
+                "bsdx": "[train] departure destination day arrive people",
+                "db": 1,
+                "dspn": "[train]",
+                "aspn": "[train] [offerbooked] reference choice id arrive leave",
+                "aspn_dict": {
+                    "[train]": {
+                        "[offerbooked]": [
+                            "reference",
+                            "choice",
+                            "id",
+                            "arrive",
+                            "leave"
+                        ]
+                    }
+                },
+                "all_domains": [
+                    "[train]"
+                ]
+            },
+            {
+                "dial_id": "sng0311",
+                "turn_num": 4,
+                "user": "okay great ! thanks for all your help .",
+                "resp": "it is my pleasure . goodbye !",
+                "nodelx_resp": "it is my pleasure . goodbye !",
+                "bspn": "[train] departure bishops stortford destination cambridge day thursday arrive 09:15 people 8",
+                "bspn_dict": {
+                    "[train]": {
+                        "departure": "bishops stortford",
+                        "destination": "cambridge",
+                        "day": "thursday",
+                        "arrive_by": "09:15",
+                        "people": "8"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[train]": {
+                        "departure": "bishops stortford",
+                        "destination": "cambridge",
+                        "day": "thursday",
+                        "arrive_by": "09:15",
+                        "people": "8"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "",
+                "turn_bspn_dict": {},
+                "turn_svs_dict": {
+                    "[train]": {
+                        "leave_at_or_after": "assistant_inform",
+                        "arrive_by": "assistant_inform",
+                        "people": "assistant_inform"
+                    }
+                },
+                "bsdx": "[train] departure destination day arrive people",
+                "db": 1,
+                "dspn": "[general]",
+                "aspn": "[general] [bye]",
+                "aspn_dict": {
+                    "[general]": {
+                        "[bye]": []
+                    }
+                },
+                "all_domains": [
+                    "[general]",
+                    "[train]"
+                ]
+            }
+        ]
+    ],
+    "[restaurant]": [
+        [
+            {
+                "dial_id": "sng0707",
+                "turn_num": 0,
+                "user": "i am needing a place to dine . it needs to be an expensive brazilian place .",
+                "resp": "unfortunately , i do n't happen to show any restaurant -s that meet that criteria . would you like me to try looking for a different price range or cuisine type ?",
+                "nodelx_resp": "unfortunately , i do n't happen to show any restaurant -s that meet that criteria . would you like me to try looking for a different price range or cuisine type ?",
+                "bspn": "[restaurant] food brazilian pricerange expensive",
+                "bspn_dict": {
+                    "[restaurant]": {
+                        "food": "brazilian",
+                        "pricerange": "expensive"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[restaurant]": {
+                        "food": "brazilian",
+                        "pricerange": "expensive"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "[restaurant] food brazilian pricerange expensive",
+                "turn_bspn_dict": {
+                    "[restaurant]": {
+                        "food": "brazilian",
+                        "pricerange": "expensive"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[restaurant]": {
+                        "food": "user_inform",
+                        "pricerange": "user_inform"
+                    }
+                },
+                "bsdx": "[restaurant] food pricerange",
+                "db": 1,
+                "dspn": "[restaurant]",
+                "aspn": "[restaurant] [nooffer]",
+                "aspn_dict": {
+                    "[restaurant]": {
+                        "[nooffer]": []
+                    }
+                },
+                "all_domains": [
+                    "[restaurant]"
+                ]
+            },
+            {
+                "dial_id": "sng0707",
+                "turn_num": 1,
+                "user": "british food , then .",
+                "resp": "we have [value_choice] . do you have an area preference ? [value_name] , on the [value_area] side , is popular .",
+                "nodelx_resp": "we have 6 . do you have an area preference ? graffiti , on the west side , is popular .",
+                "bspn": "[restaurant] food british pricerange expensive",
+                "bspn_dict": {
+                    "[restaurant]": {
+                        "food": "british",
+                        "pricerange": "expensive"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[restaurant]": {
+                        "food": "british",
+                        "pricerange": "expensive"
+                    }
+                },
+                "confirm_bspn_dict": {},
+                "turn_bspn": "[restaurant] food british",
+                "turn_bspn_dict": {
+                    "[restaurant]": {
+                        "food": "british"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[restaurant]": {
+                        "food": "user_inform"
+                    }
+                },
+                "bsdx": "[restaurant] food pricerange",
+                "db": 1,
+                "dspn": "[restaurant]",
+                "aspn": "[restaurant] [recommend] name area [inform] choice [request] area",
+                "aspn_dict": {
+                    "[restaurant]": {
+                        "[recommend]": [
+                            "name",
+                            "area"
+                        ],
+                        "[inform]": [
+                            "choice"
+                        ],
+                        "[request]": [
+                            "area"
+                        ]
+                    }
+                },
+                "all_domains": [
+                    "[restaurant]"
+                ]
+            },
+            {
+                "dial_id": "sng0707",
+                "turn_num": 2,
+                "user": "all right , i 'll try that . i need a reservation for a party of 5 at 11:00 on thursday .",
+                "resp": "booking was successful . the table will be reserved for 15 minutes . reference number is : [value_reference] . is there anything else i can help you with ?",
+                "nodelx_resp": "booking was successful . the table will be reserved for 15 minutes . reference number is : p15gvv9v . is there anything else i can help you with ?",
+                "bspn": "[restaurant] food british pricerange expensive name graffiti time 11:00 day thursday people 5",
+                "bspn_dict": {
+                    "[restaurant]": {
+                        "food": "british",
+                        "pricerange": "expensive",
+                        "name": "graffiti",
+                        "time": "11:00",
+                        "day": "thursday",
+                        "people": "5"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[restaurant]": {
+                        "food": "british",
+                        "pricerange": "expensive",
+                        "time": "11:00",
+                        "day": "thursday",
+                        "people": "5"
+                    }
+                },
+                "confirm_bspn_dict": {
+                    "[restaurant]": {
+                        "name": "graffiti"
+                    }
+                },
+                "turn_bspn": "[restaurant] name graffiti time 11:00 day thursday people 5",
+                "turn_bspn_dict": {
+                    "[restaurant]": {
+                        "name": "graffiti",
+                        "time": "11:00",
+                        "day": "thursday",
+                        "people": "5"
+                    }
+                },
+                "turn_svs_dict": {
+                    "[restaurant]": {
+                        "area": "assistant_inform",
+                        "name": "user_confirm",
+                        "time": "user_inform",
+                        "day": "user_inform",
+                        "people": "user_inform"
+                    }
+                },
+                "bsdx": "[restaurant] food pricerange name time day people",
+                "db": 1,
+                "dspn": "[restaurant]",
+                "aspn": "[restaurant] [offerbooked] reference [general] [reqmore]",
+                "aspn_dict": {
+                    "[restaurant]": {
+                        "[offerbooked]": [
+                            "reference"
+                        ]
+                    },
+                    "[general]": {
+                        "[reqmore]": []
+                    }
+                },
+                "all_domains": [
+                    "[restaurant]"
+                ]
+            },
+            {
+                "dial_id": "sng0707",
+                "turn_num": 3,
+                "user": "no that was all i needed , thanks so much , goodbye !",
+                "resp": "you are welcome ! have a great day !",
+                "nodelx_resp": "you are welcome ! have a great day !",
+                "bspn": "[restaurant] food british pricerange expensive name graffiti time 11:00 day thursday people 5",
+                "bspn_dict": {
+                    "[restaurant]": {
+                        "food": "british",
+                        "pricerange": "expensive",
+                        "name": "graffiti",
+                        "time": "11:00",
+                        "day": "thursday",
+                        "people": "5"
+                    }
+                },
+                "inform_bspn_dict": {
+                    "[restaurant]": {
+                        "food": "british",
+                        "pricerange": "expensive",
+                        "time": "11:00",
+                        "day": "thursday",
+                        "people": "5"
+                    }
+                },
+                "confirm_bspn_dict": {
+                    "[restaurant]": {
+                        "name": "graffiti"
+                    }
+                },
+                "turn_bspn": "",
+                "turn_bspn_dict": {},
+                "turn_svs_dict": {},
+                "bsdx": "[restaurant] food pricerange name time day people",
+                "db": 1,
+                "dspn": "[general]",
+                "aspn": "[general] [greet]",
+                "aspn_dict": {
+                    "[general]": {
+                        "[greet]": []
+                    }
+                },
+                "all_domains": [
+                    "[general]",
+                    "[restaurant]"
+                ]
+            }
+        ]
+    ]
+}

@@ -86,6 +86,7 @@ def schema2function(service, template="llama2", rename_mapping={}):
 
     description = service["description"] + ". "
     CAUTIONS = [
+        "Set the value as : 'none' if the user does NOT EXPLICITLY provide or confirm a value for a parameter.",
         "Set the value as : 'dontcare' ONLY when the user EXPLICITLY states they have no specific preference for a parameter.",
     ]
     if contain_name_parameter:

@@ -7,6 +7,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
+import re
 import json
 import argparse
 from copy import deepcopy
@@ -98,7 +99,60 @@ def dict_update(ori_dict, new_dict):
             ori_dict[key] = value
 
 
+def round_floats(d, decimals=4):
+    if isinstance(d, float):
+        return round(d, decimals)
+    elif isinstance(d, list):
+        return [round_floats(i, decimals) for i in d]
+    elif isinstance(d, dict):
+        new_d = {}
+        for key, value in d.items():
+            new_d[key] = round_floats(value, decimals)
+        return new_d
+    else:
+        return d
+
+
 ############################################
+
+############## regex patterns ##############
+domain_prediction_regex = r"(taxi|train|attraction|hotel|restaurant|hospital|police|general)"
+
+def get_argument_regex(function, add_extra=False):
+    extra_values = ["none", "dontcare"]
+    regex_dict = {}
+    for slot, slot_info in function["parameters"]["properties"].items():
+        if "enum" in slot_info:
+            enum_values = deepcopy(slot_info["enum"])
+            for extra_value in extra_values[::-1]:
+                if add_extra and extra_value not in enum_values:
+                    enum_values.insert(0, extra_value)
+            regex_dict[slot] = re.compile(rf"({'|'.join(enum_values)})")
+        elif slot in ["time", "leave_at_or_after", "leaveat", "leave" "arrive_by", "arriveby", "arrive"]:
+            time_pattern = r"([01][0-9]|2[0-4]):[0-5][0-9]"
+            if add_extra:
+                time_pattern = rf"({'|'.join(extra_values)}|{time_pattern})"
+            regex_dict[slot] = re.compile(time_pattern)
+
+        else:
+            regex_dict[slot] = re.compile(r'[^"\\\x00-\x1F\x7F-\x9F]{0,50}')
+
+    # whitespace_pattern = r",\n    "
+    whitespace_pattern = ", "
+
+    json_regex = (r" \{" + whitespace_pattern.lstrip(", ")
+                  + whitespace_pattern.join([f'"{slot}": "{regex.pattern}"' for slot, regex in regex_dict.items()])
+                  + r"\}")
+    # print(json_regex)
+    return regex_dict, json_regex
+
+
+def fill_inactive_slots(domain_goal, domain_slots, fill_value="none"):
+    new_goal = deepcopy(domain_goal)
+    for slot in domain_slots:
+        if slot not in new_goal:
+            new_goal[slot] = fill_value
+    return new_goal
 
 
 ############## Configurations ##############
@@ -218,10 +272,49 @@ def build_divide_examples(type, domain_examples, domain2mapping, EXPERIMENT_DOMA
         example_messages.append(example_message)
     return example_messages
 
+
+def build_status_examples(
+        args, domain2inform_slots, domain_examples, domain2mapping, EXPERIMENT_DOMAINS):
+    example_messages = []
+    for bs_example in domain_examples:
+        previous_message = []
+        all_domains = []
+        for tidx, turn in enumerate(bs_example):
+            domain = turn["dspn"]
+            user = turn["user"]
+            resp = turn["nodelx_resp"]
+            turn_svs_dict = turn["turn_svs_dict"]
+            previous_message.append({"role": "user", "content": user})
+
+            possible_domain = None
+            if domain in EXPERIMENT_DOMAINS:
+                possible_domain = domain
+            elif len(all_domains) > 0:
+                possible_domain = all_domains[-1]
+
+            if possible_domain is not None:
+                domain_svs = turn_svs_dict.get(possible_domain, {})
+                arguments = fill_inactive_slots(domain_svs, domain2inform_slots[possible_domain[1:-1]], fill_value="not_informed") if args.fill_inactive else domain_svs
+                function_call_dict = {
+                    "function": domain2mapping[
+                        possible_domain[1:-1]
+                    ],
+                    "arguments": {k: status2option[v] for k, v in arguments.items()},
+                }
+                example_messages.append(
+                    deepcopy(previous_message[-2:]) + [
+                        {"role": "assistant", "content": "", "function_call": function_call_dict}])
+
+            previous_message.append({"role": "assistant", "content": resp})
+            if domain in EXPERIMENT_DOMAINS:
+                all_domains.append(domain)
+    return example_messages
+
+
 user_tag = "USER"
-# user_tag = "USER"
+# user_tag = "User"
 assistant_tag = "ASSISTANT"
-# assistant_tag = "APPLICATION"
+# assistant_tag = "Assistant"
 
 usr_confirm = "user_confirm"
 # usr_confirm = "user_accept"
@@ -232,32 +325,51 @@ option2status = {
     "C": slot_status[2],
     "D": slot_status[3],
 }
+status2option = {v: k for k, v in option2status.items()}
 update_status = ["user_inform", usr_confirm]
 status2desc = {
     "A": "The slot has not been mentioned in the conversation yet.",
-    "B": f"The slot value is informed by the {user_tag} and may be referred to by the {user_tag} using pronouns or coreferences, such as 'the hotel', 'the restaurant' and so on.",
+    "B": f"The slot value is{{modifier}} informed by the {user_tag} and may be referred to by the {user_tag} using pronouns or coreferences, such as 'the hotel', 'the restaurant' and so on.",
     # "B": "The slot value is directly informed by the user.",
     "C": f"The slot value is directly informed by the {assistant_tag} .",
     # "D": f"The slot value is informed by the {assistant_tag} and then explicitly confirmed by the {user_tag} . For example, the {assistant_tag} recommended a 'name' to the {user_tag} , and the {user_tag} accepted the suggested 'name'.",
     "D": f"The slot value is first informed by the {assistant_tag} and then explicitly confirmed by the {user_tag} .{{confirm_extra}}",
 }
-confirm_example = f" For example, the {assistant_tag} recommended a '{{domain}}name' to the {user_tag} , and subsequently, the {user_tag} expresses acceptance of the recommendation."
-status2desc = {option2status[k]: v for k, v in status2desc.items()}
-option2status = {k: k for k in slot_status}
+# confirm_example = f" For example, the {assistant_tag} recommended a '{{domain}}name' to the {user_tag} , and then the {user_tag} expresses acceptance of the recommendation."
+confirm_example = f" For example, the {assistant_tag} recommended a '{{domain}}name' to the {user_tag} , and then the {user_tag} accepted the suggested 'name'."
 
 status_desc_str = "; ".join([f" - {k} : {v}" for k, v in status2desc.items()])
 slot_status_notes = [
     "You are a task-oriented assistant. You need to use the given functions to track the source of slot values for all slots in the given domain.",
     # "You are a task-oriented ASSISTANT. You need to use the given functions to track the source of slot values for all slots in the given domain.",
     # "You are required to utilize the provided functions to track the source of slot values across all slots within the specified domain during the following dialogue between the USER and the ASSISTANT.",
-    # "If the value of a slot has not yet appeared in the conversation, set the status of that slot to 'not_mentioned'."
+    # "If the value of a slot has not yet appeared in the conversation, set the status of that slot to 'not_informed'."
     # f"The status of slots is described as follows:\n{status_desc_str}",
     # "Do not miss any slot mentioned in the dialogue.",
     # f"You must accurately identify whether the mentioned slot value is informed by the {user_tag} or the {assistant_tag} .",
     # f"The status of the slots can only be selected from {list(option2status.keys())}, do not use the actual values of the slots."
 ]
 
+
+def set_global_variable_for_status(args):
+    global status2desc, option2status, status_desc_str, status2option
+    if args.status_option == "abstract":
+        pass
+    elif args.status_option == "concrete":
+        status2desc = {option2status[k]: v for k, v in status2desc.items()}
+        option2status = {k: k for k in slot_status}
+        status2option = {v: k for k, v in option2status.items()}
+        status_desc_str = "; ".join([f" - {k} : {v}" for k, v in status2desc.items()])
+    else:
+        raise NotImplementedError
+
+
 def adapt_track_slot_status(messages, functions, domain2function_mapping, domain2desc):
+    # print(status2desc)
+    # print(option2status)
+    # print(status_desc_str)
+    # exit(0)
+
     status_messages = None
     if messages:
         # modify the messages
@@ -282,6 +394,7 @@ def adapt_track_slot_status(messages, functions, domain2function_mapping, domain
     reverse_mapping = {v: k for k, v in domain2function_mapping.items()}
     # modify the functions
     domain2mapping = {d: f"track_{d}_slot_status" for d in domain2function_mapping}
+    # domain2mapping = {d: f"track_{d}_slot_value_source" for d in domain2function_mapping}
 
     new_functions = deepcopy(functions)
     for function in new_functions:
@@ -293,11 +406,22 @@ def adapt_track_slot_status(messages, functions, domain2function_mapping, domain
             confirm_extra = confirm_example.format(**{"domain": ""})
         else:
             confirm_extra = confirm_example.format(**{"domain": ""})
-        domain_status_desc = status_desc_str.format(**{"confirm_extra": confirm_extra})
+        # confirm_extra = ""
+        if domain in []:
+            modifier = ""
+        else:
+            modifier = " directly"
+        # if domain in ["train", "taxi"]:
+        if domain in []:
+            domain_status_desc = status_desc_str.format(**{
+                "modifier": modifier, "confirm_extra": ""})
+        else:
+            domain_status_desc = status_desc_str.format(**{
+                "modifier": modifier, "confirm_extra": confirm_extra})
         extra_desc = f"Track the source of slot values for all slots in the '{domain}' domain: {domain2desc[domain]}"
         extra_desc += f" The status of slots is described as follows: {domain_status_desc}"
         # if domain in ["taxi"]:
-        #     extra_desc += f"\n\nYou must accurately identify whether the mentioned slot value is informed by the {user_tag} or the {assistant_tag} ."
+        #     extra_desc += f"\nYou must accurately identify whether the mentioned slot value is informed by the {user_tag} or the {assistant_tag} ."
 
         function["description"] = f"{extra_desc}"
         new_properties = {}
@@ -308,8 +432,8 @@ def adapt_track_slot_status(messages, functions, domain2function_mapping, domain
             slot_info["type"] = "string"
 
             no_enum_flag = False
-            if domain in ["train"]:
-                no_enum_flag = True
+            # if domain in ["train"]:
+            #     no_enum_flag = True
             for no_enum_slot in no_enum_slots:
                 if isinstance(no_enum_slot, list):
                     if domain == no_enum_slot[0] and slot in no_enum_slot[1]:
@@ -399,13 +523,14 @@ def filter_state_based_on_status(user_goal, user_status):
 
     ignored_slots = []
     ignored_slots = ["name"]
+    # ignored_slots = [["[restaurant]", "name"], ["[hotel]", "name"]]
 
     new_goal = {}
     for domain, domain_goal in user_goal.items():
         if domain in ignored_domains:
             new_goal[domain] = deepcopy(domain_goal)
         for slot, value in domain_goal.items():
-            if slot in ignored_slots:
+            if slot in ignored_slots or [domain, slot] in ignored_slots:
                 if domain not in new_goal:
                     new_goal[domain] = {}
                 new_goal[domain][slot] = value
@@ -415,7 +540,7 @@ def filter_state_based_on_status(user_goal, user_status):
             continue
         domain_goal = user_goal.get(domain, {})
         for slot, status in domain_status.items():
-            if slot in ignored_slots:
+            if slot in ignored_slots or [domain, slot] in ignored_slots:
                 continue
             value = domain_goal.get(slot, None)
             if value is not None:

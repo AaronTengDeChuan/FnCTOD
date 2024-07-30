@@ -18,7 +18,7 @@ import time
 import json
 import torch
 from typing import Any, Dict, List, Union
-from transformers import AutoModelForCausalLM, AutoModel, AutoTokenizer, AutoConfig
+from transformers import AutoModelForCausalLM, AutoModel, AutoTokenizer, AutoConfig, LlamaTokenizer
 
 
 import openai
@@ -304,3 +304,32 @@ class Claude:
                 retry_interval_exp += 1
 
         return [""] * n
+
+
+if __name__ == '__main__':
+    state = {
+        "pricerange": "moderate",
+        "accommodation_type": "guesthouse",
+        "parking": "free",
+        "day": "friday",
+        "people": "1",
+        "stay": "2",
+        "stars": "3",
+        "internet": "yes",
+        "name": "none",
+        "area": "dontcare"
+    }
+    s = json.dumps(state, indent=4)
+    # Load the model
+    model_name_or_path = "/home/share/models/Llama-2-7b-chat-hf"
+    model, tokenizer = load_hf_model(model_name_or_path)
+
+    inputs = tokenizer(
+        [s],
+        # truncation=True,
+        # max_length=100,
+        return_tensors="pt",
+        return_token_type_ids=False)
+    ids = inputs['input_ids'].tolist()[0]
+    print(f"[{len(ids)}]: {ids}")
+    print(tokenizer.convert_ids_to_tokens(ids))

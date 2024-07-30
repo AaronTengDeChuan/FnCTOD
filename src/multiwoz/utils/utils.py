@@ -11,6 +11,8 @@ import os
 import requests
 import json
 import time
+import pandas as pd
+from collections import defaultdict
 from typing import List, Dict
 import random
 
@@ -744,7 +746,35 @@ def dict_jaccard_similarity(old_dict, new_dict, levels=[3]):
     return similarity
 
 
+def count_value_chars(dsv_data):
+    value_chars = {}
+    max_value = defaultdict(lambda : {"value": "", "length": 0})
+    for domain, sv in dsv_data.items():
+        for slot, values in sv.items():
+            dsn = f"{domain[1:-1]}-{slot}"
+            if dsn not in value_chars:
+                value_chars[dsn] = []
+            for value in values:
+                if max_value[dsn]["length"] < len(value):
+                    max_value[dsn]["value"] = value
+                    max_value[dsn]["length"] = len(value)
+                value_chars[dsn].append(len(value))
+            value_chars[dsn] = pd.Series(value_chars[dsn]).describe()
+    slot_info = pd.DataFrame(value_chars).T
+    slot_info["max_value"] = [max_value[dsn]["value"] for dsn in slot_info.index]
+    return slot_info
+
+
 if __name__ == "__main__":
+    # column width
+    pd.set_option("display.max_colwidth", 100)
+    possible_slot_values = json.load(open("data/multiwoz/data/multi-woz-2.2-fine-processed/possible_slot_values.json", 'r'))
+    for split, dsv_data in possible_slot_values.items():
+        print(f"########## {split} ##########")
+        slot_info = count_value_chars(dsv_data)
+        print(slot_info, end="\n\n")
+    exit()
+
     # sent = "[hotel] people 2 stay 3"
     # sent = paser_bs_to_dict(sent)
     # print(sent)
