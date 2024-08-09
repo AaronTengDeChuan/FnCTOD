@@ -266,12 +266,13 @@ class chat_completion(object):
             template_name = "claude"
         elif "llama-2" in model and "-chat" in model:
             template_name = "llama2"
-        elif "llama-3" in model:
+        elif "llama-3" in model or model == "minicpm-2b-128k":
             template_name = "llama2"
             if not no_load_model:
                 tokenizer = AutoTokenizer.from_pretrained(
                     model_name, use_fast=False, trust_remote_code=True)
                 if tokenizer.chat_template:
+                    pass
                     self.apply_chat_template = True
                     self.tokenizer = tokenizer
                 else:
@@ -396,7 +397,7 @@ class chat_completion(object):
                 functions=functions,
                 function_call=function_call,
                 examples=examples,
-            )
+            ).strip()
 
             if self.verbose:
                 print(prompt)
@@ -429,7 +430,7 @@ class chat_completion(object):
                     retry = False
                     data = {
                         "model": "",
-                        "prompt": prompt.strip(),
+                        "prompt": prompt,
                         "temperature": temperature,
                         "top_p": top_p,
                         "max_tokens": max_tokens,

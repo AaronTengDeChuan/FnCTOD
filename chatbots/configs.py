@@ -53,6 +53,18 @@ llm_configs = {
     "llama-3.1-70b-instruct": {
         "model_name": "/home/share/models/Meta-Llama-3.1-70B-Instruct",
         "model_path": f"{HOME_PATH}/models/Meta-Llama-3.1-70B-Instruct", "port": 30260},
+    "minicpm-1b-sft": {
+        "model_name": "/home/share/models/MiniCPM-1B-sft-bf16",
+        "model_path": f"{HOME_PATH}/models/MiniCPM-1B-sft-bf16", "port": 30300},
+    "minicpm-2b-sft": {
+        "model_name": "/home/share/models/MiniCPM-2B-sft-bf16",
+        "model_path": f"{HOME_PATH}/models/MiniCPM-2B-sft-bf16", "port": 30330},
+    "minicpm-2b-128k": {
+        "model_name": "/home/share/models/MiniCPM-2B-128k",
+        "model_path": f"{HOME_PATH}/models/MiniCPM-2B-128k", "port": 30360},
+    "minicpm-2b-dpo": {
+        "model_name": "/home/share/models/MiniCPM-2B-dpo-bf16",
+        "model_path": f"{HOME_PATH}/models/MiniCPM-2B-dpo-bf16", "port": 30390},
     "baize-7b": {"model_name": "project-baize/baize-lora-7B", "port": 8014},
     "baize-13b": {"model_name": "project-baize/baize-lora-13B", "port": 8015},
     "baichuan-7b-chat": {"model_name": "baichuan-inc/Baichuan2-7B-Chat", "port": 8016},

@@ -180,6 +180,7 @@ class Conversation(object):
                     messages=example,
                     function_call={},
                     roles=["User", "Assistant"],
+                    # roles=["USER ", "ASSISTANT "],
                     colon=": ",
                     separators=["", "\n", "\n"],
                 )
@@ -313,6 +314,7 @@ class Conversation(object):
                     ret += separators[2]
                 if midx + 1 == len(messages) and predict:
                     ret = ret.strip()
+                    # pass
             elif message["role"] == "function":
                 if midx + 1 == len(messages):
                     ret += separators[2]
@@ -444,6 +446,7 @@ class Conversation(object):
 
                     # json obj -> str
                     function_prompt = json.dumps(function_dict, indent=4)
+                    # function_prompt = json.dumps(function_dict)
                     function_prompt = "<FUNCTION>\n" + function_prompt + "\n</FUNCTION>"
                     prompts.append(function_prompt)
 
@@ -516,7 +519,11 @@ class Conversation(object):
                         parsed_function_call = parsed_function_call.split(
                             function_call_prefix
                         )[1].strip()
-                    parsed_function_call = json.loads(parsed_function_call)
+                    try:
+                        parsed_function_call = json.loads(parsed_function_call)
+                    except:
+                        parsed_function_call = extract_first_dict(parsed_function_call)
+                        parsed_function_call = json.loads(parsed_function_call)
                 else:
                     parsed_function_call = extract_first_dict(text)
                     parsed_response = text.replace(parsed_function_call, "").strip()
@@ -527,7 +534,7 @@ class Conversation(object):
 
         # get response
         if "content" in required:
-            parsed_response = text
+            parsed_response = original_text.replace("\_", "_")
             if function_call_prefix in parsed_response:
                 parsed_response = parsed_response.split(function_call_prefix)[0].strip()
 

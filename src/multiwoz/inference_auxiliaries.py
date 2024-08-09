@@ -45,7 +45,7 @@ domain2user_inform_mapping = {
 
 
 
-def get_args():
+def get_args(**kwargs):
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--host", type=str, default=None, help="host name")
@@ -53,6 +53,9 @@ def get_args():
     parser.add_argument("--regex", type=str2bool, default=False, help="regex pattern")
     parser.add_argument("--fill_inactive", type=str2bool, default=False, help="fill inactive slots")
     parser.add_argument("--status_option", type=str, default="concrete", choices=["concrete", "abstract"])
+    parser.add_argument("--status_context_window", type=int, default=2)
+    parser.add_argument("--ind_status", type=str2bool, default=False, help="whether to decode slot status individually")
+    parser.add_argument("--no_enum", type=str2bool, default=False, help="whether to enumerate all possible values")
 
     # arguments for dataset
     parser.add_argument(
@@ -151,6 +154,12 @@ def get_args():
 
     args, unknown = parser.parse_known_args()
 
+    sgl_infer = kwargs.get("sgl_infer", False)
+    args.sgl_infer = sgl_infer
+
+    if args.sgl_infer:
+        assert not args.regex, f"Not need to use regex pattern for sgl functions.\n\n"
+
     # fixed setups
     if args.model in ["gpt-3.5", "gpt-4"]:
         assert args.dst_nshot == 0
@@ -164,6 +173,9 @@ def get_args():
         assert args.ref_bs == True
     elif args.task == "dst" or args.task == "e2e":
         assert args.ref_bs == False
+
+    if args.ind_status and not args.sgl_infer:
+        assert args.regex, "Need to use regex pattern for individual status decoding.\n\n"
 
     if args.fill_inactive:
         assert args.dst_nshot > 0, "Need to provide demonstration examples for filling inactive slots.\n\n"
@@ -218,13 +230,19 @@ def load_eval_data(args):
     if not os.path.exists(data_prefix):
         os.makedirs(data_prefix, exist_ok=True)
     # data_prefix = f"./outputs/multiwoz2.2/test1000-multiFalse-refFalse-prevFalse-json-status_dst"
-    # data_prefix = os.path.join(data_prefix, "llama-3.1-8b-instruct-llama2-template")
+    # data_prefix = os.path.join(data_prefix, "llama-3-instruct-llama2-template")
 
     regex_tag = ""
+    if args.sgl_infer:
+        regex_tag += "-sglfunc"
     if args.regex:
         regex_tag += "-regex"
     if args.fill_inactive:
         regex_tag += "-fill"
+    if args.ind_status:
+        regex_tag += "-ind"
+    if args.no_enum:
+        regex_tag += "-noenum"
 
     if args.ind_dst:
         config_prefix = f"{data_prefix}/{args.split}{args.n_eval}-multi{args.multi_domain}-ref{args.ref_domain}-prev{args.add_prev}-{args.function_type}{regex_tag}-ind_dst{args.dst_nshot}shot"
@@ -235,7 +253,15 @@ def load_eval_data(args):
         option_type = "" if args.status_option == "concrete" else f"{args.status_option[:3]}_"
         # option_type += "src_identify_"
         # option_type += "lower_"
-        config_prefix = f"{data_prefix}/{args.split}{args.n_eval}-multi{args.multi_domain}-ref{args.ref_domain}-prev{args.add_prev}-{args.function_type}{regex_tag}-{option_type}status_dst{args.dst_nshot}shot"
+        # option_type += "upper_"
+        # option_type += "noindent_"
+        # option_type += "passive_"
+        extra_params = ""
+        if args.status_context_window != 2:
+            extra_params += f"-window{args.status_context_window}"
+        if args.temperature != 0.3:
+            extra_params += f"-temp{args.temperature}"
+        config_prefix = f"{data_prefix}/{args.split}{args.n_eval}-multi{args.multi_domain}-ref{args.ref_domain}-prev{args.add_prev}-{args.function_type}{regex_tag}-{option_type}status_dst{args.dst_nshot}shot{extra_params}"
     else:
         config_prefix = f"{data_prefix}/{args.split}{args.n_eval}-multi{args.multi_domain}-ref{args.ref_domain}-prev{args.add_prev}-{args.function_type}{regex_tag}-dst{args.dst_nshot}shot"
 
@@ -398,6 +424,275 @@ def prepare_evaluation(data):
     return eval_data, in_out_data
 
 
+def prepare_domain_prediction(args, eval_turns, cur_turn_idx, space=''):
+    eval_turn = eval_turns[cur_turn_idx]
+    all_domains = ["restaurant", "hotel", "attraction", "train", "taxi", "hospital", "police", "general"]
+    domain2text = {k: f"[{space}{k}{space}]" for k in all_domains}
+    domain2text[''] = ' '
+
+    messages = []
+    domain_list = ", ".join([domain2text[k] for k in ["restaurant", "hotel", "taxi", "train", "hospital", "police", "attraction"]])
+    dp_instruction = (
+        "You are a task-oriented assistant. "
+        "Your role is to determine which domain the user is seeking information about or attempting to make a booking in during each turn of the conversation. "
+        f"Select the most relevant domain from the following options: {domain_list}. "
+        f"If the user's inquiry does not align with a specific domain, use: {domain2text['general']}. "
+        f"Note that the {domain2text['attraction']} domain encompasses various categories, including architecture, boat, cinema, college, concert hall, "
+        "entertainment, museum, sports activities, nightclub, park, swimming pool, and theatre."
+    )
+    messages.append({"role": "system", "content": dp_instruction})
+
+    # examples
+    dp_examples = [
+        [
+            (
+                "hi, could i find some museum in the center of the town ?",
+                domain_prefix
+                + domain2text["attraction"]
+                + domain_suffix
+                + "The railroad museum would be nice for you .",
+            ),
+            (
+                "great , and i also want to book a taxi to leave the attraction by 08:00 . get contact number and car type .",
+                domain_prefix + domain2text["taxi"] + domain_suffix,
+            ),
+        ],
+        [
+            (
+                "please find me a place to dine that serves vegetarian food .",
+                domain_prefix
+                + domain2text["restaurant"]
+                + domain_suffix
+                + "i found a cheap one that serves korea food .",
+            ),
+        ],
+        [
+            (
+                "i am also looking for place -s to go in town . i would love for it to be sports related .",
+                domain_prefix
+                + domain2text["attraction"]
+                + domain_suffix
+                + "we have 4 swimming pool location -s . what do you think about those ?",
+            ),
+            (
+                "okay, thank you . have a good day !",
+                domain_prefix
+                + domain2text["general"]
+                + domain_suffix
+                + "you too, bye !",
+            ),
+        ],
+        [
+            (
+                "do you have any place -s to stay in the west that include free parking ?",
+                domain_prefix
+                + domain2text["hotel"]
+                + domain_suffix
+                + "yes, what price range are you looking for ?",
+            )
+        ],
+    ]
+    example_messages = []
+    for example in dp_examples:
+        example_message = []
+        for turn in example:
+            user, resp = turn
+            example_message.extend(
+                [
+                    {"role": "user", "content": user},
+                    {"role": "assistant", "content": resp},
+                ]
+            )
+        example_messages.append(example_message)
+
+    # history message
+    for prev_turn in eval_turns[:cur_turn_idx]:
+        usr = prev_turn["user"]
+        resp = prev_turn["nodelx_resp"]
+        domain_gen = prev_turn["dspn_gen"]
+        resp = domain_prefix + domain2text[domain_gen[1:-1]] + domain_suffix + resp
+        messages.append({"role": "user", "content": usr})
+        messages.append({"role": "assistant", "content": resp})
+
+    # current turn
+    usr = eval_turn["user"]
+    messages.append({"role": "user", "content": usr})
+    resp_prefix = domain_prefix + f"[{space}"
+    messages.append({"role": "assistant", "content": resp_prefix})
+
+    return messages, example_messages
+
+
+def parse_domain(args, dspn_gen, eval_turn, schema, ChatCompletion):
+    dspn_gen = dspn_gen.lower()
+
+    turn_domain = ""
+    for d in [
+        "taxi",
+        "attraction",
+        "hotel",
+        "restaurant",
+        "train",
+        "hospital",
+        "police",
+        "general",
+    ]:
+        if d in dspn_gen:
+            turn_domain = "[" + d + "]"
+            eval_turn["dspn_gen"] = turn_domain
+            break
+    for d in [
+        "architecture",
+        "boat",
+        "cinema",
+        "college",
+        "concert hall",
+        "entertainment",
+        "museum",
+        "sports",
+        "nightclub",
+        "park",
+        "swimming pool",
+        "theatre",
+    ]:
+        if d in dspn_gen:
+            turn_domain = "[attraction]"
+            eval_turn["dspn_gen"] = turn_domain
+            break
+
+    """
+    Find the domain schema, examples for the prompt construction
+    """
+    functions = []
+    current_function = None
+    for domain in EXPERIMENT_DOMAINS:
+        for service in schema:
+            if service["service_name"] == domain[1:-1]:
+                function = schema2function(
+                    service,
+                    template=ChatCompletion.template,
+                    rename_mapping=domain2function_mapping,
+                )
+                if args.multi_domain:
+                    functions.append(function)
+                elif domain == turn_domain:  # only the current turn domain
+                    current_function = function
+                    functions.append(current_function)
+                break
+
+    return turn_domain, functions, current_function
+
+def prepare_dst_prediction(args, vital_ns, eval_turns, cur_turn_idx, turn_domain):
+    examples = vital_ns.examples
+    div_examples = vital_ns.div_examples
+    domain2inform_slots = vital_ns.domain2inform_slots
+
+    eval_turn = eval_turns[cur_turn_idx]
+
+    messages = []
+    # system instruction
+    system_messages = [random.choice(tod_instructions)]
+    system_messages.extend(tod_notes)
+    system_message = "\n".join(system_messages)
+    messages.append({"role": "system", "content": system_message})
+
+    # select examples for the current domain
+    if args.divide_inform_confirm or args.track_slot_status:
+        dst_examples = div_examples
+    else:
+        dst_examples = examples
+        # dst_examples = div_examples
+    if not args.multi_domain and turn_domain in dst_examples:
+        domain_examples = dst_examples[turn_domain][: args.dst_nshot]
+    else:
+        domain_examples = []
+
+    # previous example conversations (NODELX)
+    example_messages = []
+    for bs_example in domain_examples:
+        example_message = []
+        for turn in bs_example:
+            domain = turn["dspn"]
+            user = turn["user"]
+            resp = turn["nodelx_resp"]
+            bs_dict = turn["bspn_dict"]
+            db_num = turn["db"]
+
+            # add user message
+            example_message.append({"role": "user", "content": user})
+            # add assistant message
+            if domain in EXPERIMENT_DOMAINS:
+                # if domain in bs_dict and args.add_prev:
+                if domain in bs_dict:
+                    function_call_dict = {
+                        "function": domain2function_mapping[
+                            domain[1:-1]
+                        ],
+                        # "arguments": bs_dict[domain],
+                        "arguments": fill_inactive_slots(
+                            bs_dict[domain], domain2inform_slots[domain[1:-1]]) if args.fill_inactive else {
+                            k: bs_dict[domain][k] for k in domain2inform_slots[domain[1:-1]] if k in bs_dict[domain]},
+                    }
+                    example_message.append(
+                        {
+                            "role": "assistant",
+                            "content": resp,
+                            "function_call": function_call_dict,
+                        }
+                    )
+                else:
+                    example_message.append(
+                        {"role": "assistant", "content": resp}
+                    )
+            else:
+                example_message.append(
+                    {"role": "assistant", "content": resp}
+                )
+        example_messages.append(example_message)
+
+    # history message in the current conversation
+    for prev_turn in eval_turns[:cur_turn_idx]:
+        usr = prev_turn["user"]
+        resp = prev_turn["nodelx_resp"]
+        prev_domain = prev_turn["dspn_gen"]
+        prev_bs_dict = prev_turn["bspn_dict_gen"]
+
+        # add user message
+        messages.append({"role": "user", "content": usr})
+        # add assistant message
+        assistant_message = {"role": "assistant", "content": resp}
+        if args.add_prev:
+            if args.multi_domain:
+                if prev_domain in prev_bs_dict:
+                    function_call_dict = {
+                        "function": domain2function_mapping[
+                            prev_domain[1:-1]
+                        ],
+                        "arguments": prev_bs_dict[prev_domain],
+                    }
+                    assistant_message[
+                        "function_call"
+                    ] = function_call_dict
+            else:
+                if turn_domain in prev_bs_dict:
+                    function_call_dict = {
+                        "function": domain2function_mapping[
+                            turn_domain[1:-1]
+                        ],
+                        "arguments": prev_bs_dict[turn_domain],
+                    }
+                    assistant_message[
+                        "function_call"
+                    ] = function_call_dict
+        messages.append(assistant_message)
+
+    # current turn
+    usr = eval_turn["user"]
+    messages.append({"role": "user", "content": usr})
+
+    return messages, example_messages, domain_examples
+
+
 async def infer_each_turn(
         args, vital_ns, dial_id, eval_turns, conv_in_out, cur_turn_idx, ChatCompletion,
         user_goal, inform_user_goal, confirm_user_goal,
@@ -422,94 +717,7 @@ async def infer_each_turn(
     elif eval_turn["dspn_gen"]:
         turn_domain = eval_turn["dspn_gen"]
     else:  # inference
-        messages = []
-        dp_instruction = (
-            "You are a task-oriented assistant. "
-            "Your role is to determine which domain the user is seeking information about or attempting to make a booking in during each turn of the conversation. "
-            "Select the most relevant domain from the following options: [restaurant], [hotel], [taxi], [train], [hospital], [police], [attraction]. "
-            "If the user's inquiry does not align with a specific domain, use: [general]. "
-            "Note that the [attraction] domain encompasses various categories, including architecture, boat, cinema, college, concert hall, "
-            "entertainment, museum, sports activities, nightclub, park, swimming pool, and theatre."
-        )
-        messages.append({"role": "system", "content": dp_instruction})
-
-        # examples
-        dp_examples = [
-            [
-                (
-                    "hi, could i find some museum in the center of the town ?",
-                    domain_prefix
-                    + "[attraction]"
-                    + domain_suffix
-                    + "The railroad museum would be nice for you .",
-                ),
-                (
-                    "great , and i also want to book a taxi to leave the attraction by 08:00 . get contact number and car type .",
-                    domain_prefix + "[taxi]" + domain_suffix,
-                ),
-            ],
-            [
-                (
-                    "please find me a place to dine that serves vegetarian food .",
-                    domain_prefix
-                    + "[restaurant]"
-                    + domain_suffix
-                    + "i found a cheap one that serves korea food .",
-                ),
-            ],
-            [
-                (
-                    "i am also looking for place -s to go in town . i would love for it to be sports related .",
-                    domain_prefix
-                    + "[attraction]"
-                    + domain_suffix
-                    + "we have 4 swimming pool location -s . what do you think about those ?",
-                ),
-                (
-                    "okay, thank you . have a good day !",
-                    domain_prefix
-                    + "[general]"
-                    + domain_suffix
-                    + "you too, bye !",
-                ),
-            ],
-            [
-                (
-                    "do you have any place -s to stay in the west that include free parking ?",
-                    domain_prefix
-                    + "[hotel]"
-                    + domain_suffix
-                    + "yes, what price range are you looking for ?",
-                )
-            ],
-        ]
-        example_messages = []
-        for example in dp_examples:
-            example_message = []
-            for turn in example:
-                user, resp = turn
-                example_message.extend(
-                    [
-                        {"role": "user", "content": user},
-                        {"role": "assistant", "content": resp},
-                    ]
-                )
-            example_messages.append(example_message)
-
-        # history message
-        for prev_turn in eval_turns[:cur_turn_idx]:
-            usr = prev_turn["user"]
-            resp = prev_turn["nodelx_resp"]
-            domain_gen = prev_turn["dspn_gen"]
-            resp = domain_prefix + domain_gen + domain_suffix + resp
-            messages.append({"role": "user", "content": usr})
-            messages.append({"role": "assistant", "content": resp})
-
-        # current turn
-        usr = eval_turn["user"]
-        messages.append({"role": "user", "content": usr})
-        resp_prefix = domain_prefix + "["
-        messages.append({"role": "assistant", "content": resp_prefix})
+        messages, example_messages = prepare_domain_prediction(args, eval_turns, cur_turn_idx, space=' ')
 
         # predict domain
         chat_response, in_out = await ChatCompletion.complete(
@@ -518,49 +726,19 @@ async def infer_each_turn(
             required=["content"],
             temperature=args.temperature,
             top_p=args.top_p,
-            max_tokens=8,
+            max_tokens=10,
             n_seqs=1,
             regex=domain_prediction_regex if args.regex else None,
+            # regex=domain_prediction_regex,
         )
         dspn_gen = chat_response[0]["content"]
 
-        turn_domain = ""
-        for d in [
-            "taxi",
-            "attraction",
-            "hotel",
-            "restaurant",
-            "train",
-            "hotel",
-            "police",
-            "general",
-        ]:
-            if d in dspn_gen:
-                turn_domain = "[" + d + "]"
-                eval_turn["dspn_gen"] = turn_domain
-                break
-        for d in [
-            "architecture",
-            "boat",
-            "cinema",
-            "college",
-            "concert hall",
-            "entertainment",
-            "museum",
-            "sports",
-            "nightclub",
-            "park",
-            "swimming pool",
-            "theatre",
-        ]:
-            if d in dspn_gen:
-                turn_domain = "[attraction]"
-                eval_turn["dspn_gen"] = turn_domain
-                break
+        turn_domain, functions, current_function = parse_domain(args, dspn_gen, eval_turn, schema, ChatCompletion)
 
         conv_in_out[cur_turn_idx]["domain"] = {
             "prompt": in_out["prompt"],
             "output": in_out["output"],
+            "regex": in_out.get("regex", None),
             "dspn": eval_turn["dspn"],
             "dspn_gen": turn_domain
         }
@@ -575,26 +753,6 @@ async def infer_each_turn(
             _ = input()
 
     """
-    Find the domain schema, examples for the prompt construction
-    """
-    functions = []
-    current_function = None
-    for domain in EXPERIMENT_DOMAINS:
-        for service in schema:
-            if service["service_name"] == domain[1:-1]:
-                function = schema2function(
-                    service,
-                    template=ChatCompletion.template,
-                    rename_mapping=domain2function_mapping,
-                )
-                if args.multi_domain:
-                    functions.append(function)
-                elif domain == turn_domain:  # only the current turn domain
-                    current_function = function
-                    functions.append(current_function)
-                break
-
-    """
     Step 2: Dialogue State Tracking (DST)
     """
     if args.ref_bs:
@@ -606,105 +764,9 @@ async def infer_each_turn(
         """
         Construct prompt for inference
         """
-        messages = []
-        # system instruction
-        system_messages = [random.choice(tod_instructions)]
-        system_messages.extend(tod_notes)
-        system_message = "\n".join(system_messages)
-        messages.append({"role": "system", "content": system_message})
-
-        # select examples for the current domain
-        if args.divide_inform_confirm or args.track_slot_status:
-            dst_examples = div_examples
-        else:
-            dst_examples = examples
-            # dst_examples = div_examples
-        if not args.multi_domain and turn_domain in dst_examples:
-            domain_examples = dst_examples[turn_domain][: args.dst_nshot]
-        else:
-            domain_examples = []
-
-        # previous example conversations (NODELX)
-        example_messages = []
-        for bs_example in domain_examples:
-            example_message = []
-            for turn in bs_example:
-                domain = turn["dspn"]
-                user = turn["user"]
-                resp = turn["nodelx_resp"]
-                bs_dict = turn["bspn_dict"]
-                db_num = turn["db"]
-
-                # add user message
-                example_message.append({"role": "user", "content": user})
-                # add assistant message
-                if domain in EXPERIMENT_DOMAINS:
-                    # if domain in bs_dict and args.add_prev:
-                    if domain in bs_dict:
-                        function_call_dict = {
-                            "function": domain2function_mapping[
-                                domain[1:-1]
-                            ],
-                            # "arguments": bs_dict[domain],
-                            "arguments": fill_inactive_slots(
-                                bs_dict[domain], domain2inform_slots[domain[1:-1]]) if args.fill_inactive else bs_dict[domain],
-                        }
-                        example_message.append(
-                            {
-                                "role": "assistant",
-                                "content": resp,
-                                "function_call": function_call_dict,
-                            }
-                        )
-                    else:
-                        example_message.append(
-                            {"role": "assistant", "content": resp}
-                        )
-                else:
-                    example_message.append(
-                        {"role": "assistant", "content": resp}
-                    )
-            example_messages.append(example_message)
-
-        # history message in the current conversation
-        for prev_turn in eval_turns[:cur_turn_idx]:
-            usr = prev_turn["user"]
-            resp = prev_turn["nodelx_resp"]
-            prev_domain = prev_turn["dspn_gen"]
-            prev_bs_dict = prev_turn["bspn_dict_gen"]
-
-            # add user message
-            messages.append({"role": "user", "content": usr})
-            # add assistant message
-            assistant_message = {"role": "assistant", "content": resp}
-            if args.add_prev:
-                if args.multi_domain:
-                    if prev_domain in prev_bs_dict:
-                        function_call_dict = {
-                            "function": domain2function_mapping[
-                                prev_domain[1:-1]
-                            ],
-                            "arguments": prev_bs_dict[prev_domain],
-                        }
-                        assistant_message[
-                            "function_call"
-                        ] = function_call_dict
-                else:
-                    if turn_domain in prev_bs_dict:
-                        function_call_dict = {
-                            "function": domain2function_mapping[
-                                turn_domain[1:-1]
-                            ],
-                            "arguments": prev_bs_dict[turn_domain],
-                        }
-                        assistant_message[
-                            "function_call"
-                        ] = function_call_dict
-            messages.append(assistant_message)
-
-        # current turn
-        usr = eval_turn["user"]
-        messages.append({"role": "user", "content": usr})
+        messages, example_messages, domain_examples = prepare_dst_prediction(
+            args, vital_ns, eval_turns, cur_turn_idx, turn_domain
+        )
 
         # generate dst
         if args.ind_dst:
@@ -728,31 +790,42 @@ async def infer_each_turn(
                 user_goal.update(state)
         elif args.track_slot_status:
             status_messages, status_functions, domain2mapping = adapt_track_slot_status(
-                messages, functions, domain2function_mapping, domain2desc)
+                args, messages, functions, domain2function_mapping, domain2desc)
             func_call = {"name": status_functions[0]["name"]} if current_function else {}
-            status_regex = get_argument_regex(status_functions[0])[1] if func_call else None
+            status_regex = get_argument_regex(status_functions[0], independent=args.ind_status)[1] if func_call else None
+            if not args.ind_status or status_regex is None:
+                status_regex = [status_regex]
+
+            if args.no_enum:
+                for status_function in status_functions:
+                    for slot, slot_info in status_function["parameters"]["properties"].items():
+                        slot_info.pop("enum", None)
 
             example_messages = build_status_examples(
                 args, domain2inform_slots, domain_examples, domain2mapping, EXPERIMENT_DOMAINS)
-            chat_response, in_out = await ChatCompletion.complete(
-                messages=status_messages,
-                functions=status_functions,
-                function_call=func_call,
-                required=["function_call"],
-                examples=example_messages,
-                temperature=args.temperature,
-                top_p=args.top_p,
-                # temperature=0,
-                # top_p=0,
-                max_tokens=200,
-                n_seqs=1,
-                regex=status_regex if args.regex else None,
-            )
-            if args.multi_domain or turn_domain in EXPERIMENT_DOMAINS:
-                turn_status_dict_gen = parse_status_response(
-                    chat_response[0], domain2mapping, status_functions, user_goal, EXPERIMENT_DOMAINS
+
+            turn_status_dict_gen = {}
+            for each_regex in status_regex:
+                chat_response, in_out = await ChatCompletion.complete(
+                    messages=status_messages,
+                    functions=status_functions,
+                    function_call=func_call,
+                    required=["function_call"],
+                    examples=example_messages,
+                    temperature=args.temperature,
+                    top_p=args.top_p,
+                    # temperature=0,
+                    # top_p=0,
+                    max_tokens=200,
+                    n_seqs=1,
+                    regex=each_regex if args.regex else None,
                 )
-                in_out["turn_status_dict_gen"] = turn_status_dict_gen
+                if args.multi_domain or turn_domain in EXPERIMENT_DOMAINS:
+                    status_dict_gen = parse_status_response(
+                        chat_response[0], domain2mapping, status_functions, user_goal, EXPERIMENT_DOMAINS
+                    )
+                    dict_update(turn_status_dict_gen, status_dict_gen)
+            in_out["turn_status_dict_gen"] = turn_status_dict_gen
         else:
             if args.divide_inform_confirm:
                 in_out = []
@@ -1237,7 +1310,7 @@ def not_generate(args, data_ns, vital_ns):
                 if "dst" in eval_in_out[dial_id][idx]:
                     if turn_domain in EXPERIMENT_DOMAINS:
                         status_messages, status_functions, domain2mapping = adapt_track_slot_status(
-                            [], functions, domain2function_mapping, domain2desc)
+                            args, [], functions, domain2function_mapping, domain2desc)
                         chat_response = eval_in_out[dial_id][idx]["dst"]["output"]
                         turn_status_dict_gen = parse_status_response(
                             chat_response[0], domain2mapping, status_functions, user_goal, EXPERIMENT_DOMAINS
@@ -1330,7 +1403,8 @@ def run_metric_evaluation(args, data_ns, vital_ns):
     ) = compute_jacc(
         data=all_dev_result,
         gen_state_channel=args.gen_state_channel if args.divide_inform_confirm or args.track_slot_status else "bspn_gen",
-        ignore_dontcare_in_pred=True
+        # ignore_dontcare_in_pred=True if not args.track_slot_status else False,
+        ignore_dontcare_in_pred=True,
     )
     dev_score *= 100
     print(

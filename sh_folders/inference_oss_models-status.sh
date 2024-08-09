@@ -14,6 +14,7 @@ devices=0
 
 #infer_entry="src.multiwoz.inference"
 infer_entry="src.multiwoz.async_inference"
+#infer_entry="src.multiwoz.sgl_inference"
 
 network_params=""
 # get params from command line in the form of "--key1=value1 --key2=value2 ..."
@@ -50,10 +51,13 @@ echo "network_params: $network_params"
 dst_result_path=None
 # dst results of llama-2-13b-chat
 #dst_result_path="outputs/multiwoz2.2/test1000-multiFalse-refFalse-prevTrue-json-dst0shot-llama-2-13b-chat.json"
-#dst_result_path="outputs/multiwoz2.2/test1000-multiFalse-refFalse-prevTrue-json-dst1shot-llama-2-13b-chat.json"
 #dst_result_path="outputs/multiwoz2.2/test1000-multiFalse-refFalse-prevTrue-json-regex-dst0shot-llama-2-13b-chat.json"
+#dst_result_path="outputs/multiwoz2.2/test1000-multiFalse-refFalse-prevTrue-json-fill-dst1shot-llama-2-13b-chat.json"
+#dst_result_path="outputs/multiwoz2.2/test1000-multiFalse-refFalse-prevFalse-json-regex-dst1shot-llama-2-13b-chat.json"
 #dst_result_path="outputs/multiwoz2.2/test1000-multiFalse-refFalse-prevTrue-json-regex-fill-dst1shot-llama-2-13b-chat.json"
-dst_result_path="outputs/multiwoz2.2/test1000-multiFalse-refFalse-prevTrue-json-regex-fill-dst3shot-llama-2-13b-chat.json"
+#dst_result_path="outputs/multiwoz2.2/test1000-multiFalse-refFalse-prevTrue-json-fill-dst3shot-llama-2-13b-chat.json"
+#dst_result_path="outputs/multiwoz2.2/test1000-multiFalse-refFalse-prevFalse-json-regex-dst3shot-llama-2-13b-chat.json"
+#dst_result_path="outputs/multiwoz2.2/test1000-multiFalse-refFalse-prevTrue-json-regex-fill-dst3shot-llama-2-13b-chat.json"
 
 # dst results of llama-3.1-70b-instruct
 #dst_result_path="outputs/multiwoz2.2/test1000-multiFalse-refFalse-prevTrue-json-regex-dst0shot-llama-3.1-70b-instruct.json"
@@ -78,7 +82,7 @@ do
                         do
                             for task in dst
                             do
-                                for dst_nshot in 1
+                                for dst_nshot in 0 1
                                 do
                                     for nlg_nshot in 0
                                     do
@@ -86,11 +90,11 @@ do
                                         do
                                             for model in ${models} # zephyr-7b-beta vicuna-7b-v1.5 vicuna-13b-v1.5 baichuan-13b-chat llama-2-7b-chat llama-2-13b-chat llama-3-8b llama-3-8b-instruct llama-3-70b-instruct llama-3.1-8b-instruct llama-3.1-70b-instruct
                                             do
-                                                for regex in False # False True
+                                                for regex in True False  # False True
                                                 do
-                                                    for fill_inactive in True # False True
+                                                    for fill_inactive in True False  # False True
                                                     do
-                                                        for status_option in concrete # concrete
+                                                        for status_option in abstract concrete # abstract concrete
                                                         do
                                                         CUDA_VISIBLE_DEVICES=$devices python -m ${infer_entry} \
                                                             ${network_params} \
@@ -104,7 +108,11 @@ do
                                                             --model $model \
                                                             --task $task \
                                                             --track_slot_status True \
+                                                            --ind_status False \
+                                                            --no_enum True \
                                                             --status_option $status_option \
+                                                            --status_context_window 2 \
+                                                            --temperature 0.3 \
                                                             --gen_state_channel "bspn_gen" \
                                                             --dst_nshot $dst_nshot \
                                                             --nlg_nshot $nlg_nshot \
@@ -113,7 +121,7 @@ do
                                                             --ref_bs $ref_bs \
                                                             --multi_domain $multi_domain \
                                                             --function_type $function_type \
-#                                                            --generate \
+                                                            --generate \
         #                                                    --verbose \
         #                                                    --debug
                                                         done

@@ -116,9 +116,11 @@ def round_floats(d, decimals=4):
 ############################################
 
 ############## regex patterns ##############
-domain_prediction_regex = r"(taxi|train|attraction|hotel|restaurant|hospital|police|general)"
+space = ' '
+domain_str = '|'.join(f"{space}{d}" for d in ["taxi", "train", "attraction", "hotel", "restaurant", "hospital", "police", "general"])
+domain_prediction_regex = rf"({domain_str})"
 
-def get_argument_regex(function, add_extra=False):
+def get_argument_regex(function, add_extra=False, independent=False):
     extra_values = ["none", "dontcare"]
     regex_dict = {}
     for slot, slot_info in function["parameters"]["properties"].items():
@@ -140,18 +142,22 @@ def get_argument_regex(function, add_extra=False):
     # whitespace_pattern = r",\n    "
     whitespace_pattern = ", "
 
-    json_regex = (r" \{" + whitespace_pattern.lstrip(", ")
-                  + whitespace_pattern.join([f'"{slot}": "{regex.pattern}"' for slot, regex in regex_dict.items()])
-                  + r"\}")
+    if independent:
+        json_regex = []
+        for slot, regex in regex_dict.items():
+            json_regex.append(r" \{" + whitespace_pattern.lstrip(", ") + f'"{slot}": "{regex.pattern}"' + r"\}")
+    else:
+        json_regex = (r" \{" + whitespace_pattern.lstrip(", ")
+                      + whitespace_pattern.join([f'"{slot}": "{regex.pattern}"' for slot, regex in regex_dict.items()])
+                      + r"\}")
     # print(json_regex)
     return regex_dict, json_regex
 
 
 def fill_inactive_slots(domain_goal, domain_slots, fill_value="none"):
-    new_goal = deepcopy(domain_goal)
+    new_goal = {}
     for slot in domain_slots:
-        if slot not in new_goal:
-            new_goal[slot] = fill_value
+        new_goal[slot] = domain_goal.get(slot, fill_value)
     return new_goal
 
 
@@ -294,12 +300,15 @@ def build_status_examples(
 
             if possible_domain is not None:
                 domain_svs = turn_svs_dict.get(possible_domain, {})
-                arguments = fill_inactive_slots(domain_svs, domain2inform_slots[possible_domain[1:-1]], fill_value="not_informed") if args.fill_inactive else domain_svs
+                arguments = fill_inactive_slots(
+                    domain_svs, domain2inform_slots[possible_domain[1:-1]],
+                    fill_value=slot_status[0]) if args.fill_inactive else {
+                    k: domain_svs[k] for k in domain2inform_slots[possible_domain[1:-1]] if k in domain_svs}
                 function_call_dict = {
                     "function": domain2mapping[
                         possible_domain[1:-1]
                     ],
-                    "arguments": {k: status2option[v] for k, v in arguments.items()},
+                    "arguments": {k: status2option[status2text[v]] for k, v in arguments.items()},
                 }
                 example_messages.append(
                     deepcopy(previous_message[-2:]) + [
@@ -319,14 +328,31 @@ assistant_tag = "ASSISTANT"
 usr_confirm = "user_confirm"
 # usr_confirm = "user_accept"
 slot_status = ["not_informed", "user_inform", "assistant_inform", usr_confirm]
+# status2text = {
+#     "not_informed": "Not Informed",
+#     "user_inform": f"Informed by {user_tag}",
+#     "assistant_inform": f"Informed by {assistant_tag}",
+#     usr_confirm: f"Confirmed by {user_tag}",
+# }
+status_space = ''
+status2text = {
+    "not_informed": f"{status_space}not_informed{status_space}",
+    "user_inform": f"{status_space}user_inform{status_space}",
+    "assistant_inform": f"{status_space}assistant_inform{status_space}",
+    usr_confirm: f"{status_space}user_confirm{status_space}",
+}
+
+text2status = {v: k for k, v in status2text.items()}
+
+update_status = ["user_inform", usr_confirm]
+
 option2status = {
-    "A": slot_status[0],
-    "B": slot_status[1],
-    "C": slot_status[2],
-    "D": slot_status[3],
+    "A": status2text[slot_status[0]],
+    "B": status2text[slot_status[1]],
+    "C": status2text[slot_status[2]],
+    "D": status2text[slot_status[3]],
 }
 status2option = {v: k for k, v in option2status.items()}
-update_status = ["user_inform", usr_confirm]
 status2desc = {
     "A": "The slot has not been mentioned in the conversation yet.",
     "B": f"The slot value is{{modifier}} informed by the {user_tag} and may be referred to by the {user_tag} using pronouns or coreferences, such as 'the hotel', 'the restaurant' and so on.",
@@ -338,7 +364,7 @@ status2desc = {
 # confirm_example = f" For example, the {assistant_tag} recommended a '{{domain}}name' to the {user_tag} , and then the {user_tag} expresses acceptance of the recommendation."
 confirm_example = f" For example, the {assistant_tag} recommended a '{{domain}}name' to the {user_tag} , and then the {user_tag} accepted the suggested 'name'."
 
-status_desc_str = "; ".join([f" - {k} : {v}" for k, v in status2desc.items()])
+status_desc_str = "; ".join([f" - {k.strip()} : {v}" for k, v in status2desc.items()])
 slot_status_notes = [
     "You are a task-oriented assistant. You need to use the given functions to track the source of slot values for all slots in the given domain.",
     # "You are a task-oriented ASSISTANT. You need to use the given functions to track the source of slot values for all slots in the given domain.",
@@ -357,14 +383,14 @@ def set_global_variable_for_status(args):
         pass
     elif args.status_option == "concrete":
         status2desc = {option2status[k]: v for k, v in status2desc.items()}
-        option2status = {k: k for k in slot_status}
+        status_desc_str = "; ".join([f" - {k.strip()} : {v}" for k, v in status2desc.items()])
+        option2status = {s: s for s in option2status.values()}
         status2option = {v: k for k, v in option2status.items()}
-        status_desc_str = "; ".join([f" - {k} : {v}" for k, v in status2desc.items()])
     else:
         raise NotImplementedError
 
 
-def adapt_track_slot_status(messages, functions, domain2function_mapping, domain2desc):
+def adapt_track_slot_status(args, messages, functions, domain2function_mapping, domain2desc):
     # print(status2desc)
     # print(option2status)
     # print(status_desc_str)
@@ -375,7 +401,7 @@ def adapt_track_slot_status(messages, functions, domain2function_mapping, domain
         # modify the messages
         # status_messages = deepcopy(messages)
         # status_messages = deepcopy(messages[:1] + messages[-min(3, len(messages) - 1):])
-        status_messages = deepcopy(messages[:1] + messages[-min(2, len(messages) - 1):])
+        status_messages = deepcopy(messages[:1] + messages[-min(args.status_context_window, len(messages) - 1):])
         system_message = "\n".join(slot_status_notes)
         status_messages[0]["content"] = system_message
         for message in status_messages:
@@ -490,11 +516,14 @@ def parse_status_response(assistant_message, domain2mapping, status_functions, u
             print("Can not parse:", function_call)
             turn_status_gen = {}
 
+        lower_option2status = {k.strip().lower(): text2status[v] for k, v in option2status.items()}
+
         if turn_domain in EXPERIMENT_DOMAINS:
-            for slot, status in turn_status_gen.items():
+            for slot, option in turn_status_gen.items():
                 slot = slot.strip().lower()
-                status = str(status).strip().lower()
-                status = option2status.get(status.upper(), status)
+                option = str(option).strip()
+                lower_option = option.lower()
+                status = lower_option2status.get(lower_option, option)
                 # if status not in slot_status:
                 #     status = update_status[0]
                 if slot in current_function["parameters"]["properties"]:
